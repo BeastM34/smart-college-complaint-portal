@@ -3,6 +3,8 @@ import type {
   ComplaintStatus,
   FilterOptions,
   TimelineEvent,
+  StudentComplaintStats,
+  StudentActivityEvent,
 } from '@/types';
 import { STORAGE_KEYS, getStorageItem, setStorageItem } from '@/utils/storage';
 import { MOCK_COMPLAINTS } from '@/data/mockData';
@@ -55,10 +57,64 @@ class ComplaintService {
     return complaints.find((c) => c.id === id || c.ticketNumber === id) || null;
   }
 
-  public async getStudentComplaints(studentId: string): Promise<Complaint[]> {
+  public async getStudentComplaints(studentIdOrEmail: string): Promise<Complaint[]> {
     this.ensureInitialized();
     const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
-    return complaints.filter((c) => c.studentId === studentId);
+    return complaints.filter(
+      (c) => c.studentId === studentIdOrEmail || c.studentEmail === studentIdOrEmail
+    );
+  }
+
+  public async getStudentStats(studentIdOrEmail: string): Promise<StudentComplaintStats> {
+    const complaints = await this.getStudentComplaints(studentIdOrEmail);
+    const byStatus: Record<ComplaintStatus, number> = {
+      pending: 0,
+      assigned: 0,
+      in_progress: 0,
+      resolved: 0,
+      rejected: 0,
+    };
+
+    complaints.forEach((c) => {
+      if (byStatus[c.status] !== undefined) {
+        byStatus[c.status]++;
+      }
+    });
+
+    return {
+      total: complaints.length,
+      pending: byStatus.pending,
+      assigned: byStatus.assigned,
+      inProgress: byStatus.in_progress,
+      resolved: byStatus.resolved,
+      rejected: byStatus.rejected,
+      byStatus,
+    };
+  }
+
+  public async getStudentRecentActivity(
+    studentIdOrEmail: string,
+    limit: number = 6
+  ): Promise<StudentActivityEvent[]> {
+    const complaints = await this.getStudentComplaints(studentIdOrEmail);
+    const events: StudentActivityEvent[] = [];
+
+    complaints.forEach((complaint) => {
+      if (Array.isArray(complaint.timeline)) {
+        complaint.timeline.forEach((tl) => {
+          events.push({
+            ...tl,
+            ticketNumber: complaint.ticketNumber,
+            complaintTitle: complaint.title,
+          });
+        });
+      }
+    });
+
+    // Sort descending by timestamp
+    events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    return events.slice(0, limit);
   }
 
   public async createComplaint(

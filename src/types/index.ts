@@ -154,3 +154,18 @@ export interface FilterOptions {
   sortBy?: 'createdAt' | 'priority' | 'updatedAt';
   sortOrder?: 'asc' | 'desc';
 }
+
+export interface StudentComplaintStats {
+  total: number;
+  pending: number;
+  assigned: number;
+  inProgress: number;
+  resolved: number;
+  rejected: number;
+  byStatus: Record<ComplaintStatus, number>;
+}
+
+export interface StudentActivityEvent extends TimelineEvent {
+  ticketNumber: string;
+  complaintTitle: string;
+}
