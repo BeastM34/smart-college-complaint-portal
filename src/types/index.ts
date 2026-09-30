@@ -4,6 +4,14 @@
 
 export type Role = 'student' | 'admin' | 'staff';
 
+export interface UserPreferences {
+  theme?: 'light' | 'dark' | 'system';
+  emailAlerts?: boolean;
+  statusChangeAlerts?: boolean;
+  assignmentAlerts?: boolean;
+  digestSummary?: boolean;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -13,7 +21,9 @@ export interface User {
   department?: string;
   year?: string;
   phone?: string;
+  bio?: string;
   avatarUrl?: string;
+  preferences?: UserPreferences;
   password?: string; // Stored securely in mock database
   createdAt: string;
 }
@@ -118,12 +128,22 @@ export interface Complaint {
 
 export type NotificationType = 'info' | 'success' | 'warning' | 'error';
 
+export type NotificationCategory =
+  | 'complaint_submitted'
+  | 'complaint_assigned'
+  | 'status_changed'
+  | 'complaint_resolved'
+  | 'admin_message'
+  | 'system_notification';
+
 export interface Notification {
   id: string;
   userId: string;
   title: string;
   message: string;
   type: NotificationType;
+  category?: NotificationCategory | string;
+  complaintId?: string;
   read: boolean;
   link?: string;
   createdAt: string;

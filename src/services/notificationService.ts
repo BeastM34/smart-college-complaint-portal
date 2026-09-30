@@ -20,7 +20,12 @@ class NotificationService {
       STORAGE_KEYS.NOTIFICATIONS,
       MOCK_NOTIFICATIONS
     );
-    return notifications.filter((n) => n.userId === userId);
+    return notifications.filter(
+      (n) =>
+        n.userId === userId ||
+        n.userId === 'all' ||
+        n.userId === 'all_students'
+    );
   }
 
   public async getUnreadCount(userId: string): Promise<number> {
@@ -52,9 +57,31 @@ class NotificationService {
       MOCK_NOTIFICATIONS
     );
     const updated = notifications.map((n) =>
-      n.userId === userId ? { ...n, read: true } : n
+      n.userId === userId || n.userId === 'all' || n.userId === 'all_students'
+        ? { ...n, read: true }
+        : n
     );
     setStorageItem(STORAGE_KEYS.NOTIFICATIONS, updated);
+  }
+
+  public async deleteNotification(id: string): Promise<void> {
+    this.ensureInitialized();
+    const notifications = getStorageItem<Notification[]>(
+      STORAGE_KEYS.NOTIFICATIONS,
+      MOCK_NOTIFICATIONS
+    );
+    const filtered = notifications.filter((n) => n.id !== id);
+    setStorageItem(STORAGE_KEYS.NOTIFICATIONS, filtered);
+  }
+
+  public async broadcastNotification(
+    data: Omit<Notification, 'id' | 'createdAt' | 'read' | 'userId'>,
+    target: 'all' | 'all_students' = 'all_students'
+  ): Promise<Notification> {
+    return this.createNotification({
+      ...data,
+      userId: target,
+    });
   }
 
   public async createNotification(

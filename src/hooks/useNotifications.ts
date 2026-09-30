@@ -45,6 +45,15 @@ export function useNotifications() {
     setUnreadCount(0);
   };
 
+  const deleteNotification = async (id: string) => {
+    await notificationService.deleteNotification(id);
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    setUnreadCount((prev) => {
+      const removed = notifications.find((n) => n.id === id);
+      return removed && !removed.read ? Math.max(0, prev - 1) : prev;
+    });
+  };
+
   return {
     notifications,
     unreadCount,
@@ -52,5 +61,6 @@ export function useNotifications() {
     reload: loadNotifications,
     markAsRead,
     markAllAsRead,
+    deleteNotification,
   };
 }

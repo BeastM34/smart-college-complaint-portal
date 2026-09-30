@@ -241,6 +241,25 @@ class ComplaintService {
 
     complaints[index] = updated;
     setStorageItem(STORAGE_KEYS.COMPLAINTS, complaints);
+
+    // Automatic Notification: notify student about status change or resolution
+    try {
+      const isResolved = status === 'resolved';
+      await notificationService.createNotification({
+        userId: complaint.studentId,
+        title: isResolved ? 'Complaint Resolved' : 'Status Updated',
+        message: isResolved
+          ? `Your ticket ${complaint.ticketNumber} has been resolved: "${message}"`
+          : `Ticket ${complaint.ticketNumber} status is now ${status.replace('_', ' ').toUpperCase()}: "${message}"`,
+        type: isResolved ? 'success' : status === 'rejected' ? 'error' : 'info',
+        category: isResolved ? 'complaint_resolved' : 'status_changed',
+        complaintId: complaint.id,
+        link: `/student/complaints/${complaint.id}`,
+      });
+    } catch (e) {
+      console.warn('Could not dispatch status change notification to student:', e);
+    }
+
     return updated;
   }
 
@@ -282,6 +301,22 @@ class ComplaintService {
 
     complaints[index] = updated;
     setStorageItem(STORAGE_KEYS.COMPLAINTS, complaints);
+
+    // Automatic Notification: notify student that technician has been assigned
+    try {
+      await notificationService.createNotification({
+        userId: complaint.studentId,
+        title: 'Technician Assigned',
+        message: `Technician ${staffName} has been assigned to ticket ${complaint.ticketNumber}.`,
+        type: 'info',
+        category: 'complaint_assigned',
+        complaintId: complaint.id,
+        link: `/student/complaints/${complaint.id}`,
+      });
+    } catch (e) {
+      console.warn('Could not dispatch assignment notification to student:', e);
+    }
+
     return updated;
   }
 
