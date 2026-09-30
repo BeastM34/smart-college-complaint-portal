@@ -65,6 +65,24 @@ export interface TimelineEvent {
   updatedBy: string;
   role: Role;
   timestamp: string;
+  isInternal?: boolean;
+}
+
+export interface SatisfactionFeedback {
+  rating: 'satisfied' | 'not_satisfied';
+  feedback?: string;
+  submittedAt: string;
+}
+
+export interface ComplaintComment {
+  id: string;
+  complaintId: string;
+  authorId: string;
+  authorName: string;
+  authorRole: Role;
+  message: string;
+  timestamp: string;
+  isInternal?: boolean;
 }
 
 export interface Complaint {
@@ -89,6 +107,10 @@ export interface Complaint {
   assignedStaffName?: string;
   estimatedResolutionDate?: string;
   resolvedAt?: string;
+  satisfaction?: SatisfactionFeedback;
+  comments?: ComplaintComment[];
+  reopenReason?: string;
+  reopenedAt?: string;
   createdAt: string;
   updatedAt: string;
   timeline: TimelineEvent[];

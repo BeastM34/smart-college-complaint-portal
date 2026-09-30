@@ -5,6 +5,7 @@ import type {
   TimelineEvent,
   StudentComplaintStats,
   StudentActivityEvent,
+  ComplaintComment,
 } from '@/types';
 import { STORAGE_KEYS, getStorageItem, setStorageItem } from '@/utils/storage';
 import { MOCK_COMPLAINTS } from '@/data/mockData';
@@ -52,18 +53,39 @@ class ComplaintService {
     return complaints;
   }
 
-  public async getComplaintById(id: string): Promise<Complaint | null> {
+  public async getComplaintById(
+    id: string,
+    filterInternal: boolean = true
+  ): Promise<Complaint | null> {
     this.ensureInitialized();
     const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
-    return complaints.find((c) => c.id === id || c.ticketNumber === id) || null;
+    const item = complaints.find((c) => c.id === id || c.ticketNumber === id) || null;
+    if (!item) return null;
+
+    const currentUser = authService.getCurrentUser();
+    const shouldFilter = filterInternal && currentUser?.role !== 'admin';
+
+    if (shouldFilter) {
+      return {
+        ...item,
+        timeline: item.timeline.filter((t) => !t.isInternal),
+        comments: item.comments?.filter((c) => !c.isInternal),
+      };
+    }
+
+    return item;
   }
 
   public async getStudentComplaints(studentIdOrEmail: string): Promise<Complaint[]> {
     this.ensureInitialized();
     const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
-    return complaints.filter(
-      (c) => c.studentId === studentIdOrEmail || c.studentEmail === studentIdOrEmail
-    );
+    return complaints
+      .filter((c) => c.studentId === studentIdOrEmail || c.studentEmail === studentIdOrEmail)
+      .map((c) => ({
+        ...c,
+        timeline: c.timeline.filter((t) => !t.isInternal),
+        comments: c.comments?.filter((cm) => !cm.isInternal),
+      }));
   }
 
   public async getStudentStats(studentIdOrEmail: string): Promise<StudentComplaintStats> {
@@ -256,6 +278,185 @@ class ComplaintService {
       assignedStaffName: staffName,
       updatedAt: timestamp,
       timeline: [...complaint.timeline, newEvent],
+    };
+
+    complaints[index] = updated;
+    setStorageItem(STORAGE_KEYS.COMPLAINTS, complaints);
+    return updated;
+  }
+
+  public async addComment(
+    complaintId: string,
+    message: string,
+    isInternal: boolean = false
+  ): Promise<Complaint> {
+    this.ensureInitialized();
+    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    const currentUser = authService.getCurrentUser();
+    const index = complaints.findIndex(
+      (c) => c.id === complaintId || c.ticketNumber === complaintId
+    );
+
+    if (index === -1) {
+      throw new Error(`Complaint with ID ${complaintId} not found`);
+    }
+
+    const complaint = complaints[index];
+    const timestamp = new Date().toISOString();
+    const commentId = `comment-${Date.now()}`;
+
+    const newComment: ComplaintComment = {
+      id: commentId,
+      complaintId: complaint.id,
+      authorId: currentUser?.id || 'anonymous',
+      authorName: currentUser?.name || 'User',
+      authorRole: currentUser?.role || 'student',
+      message: message.trim(),
+      timestamp,
+      isInternal,
+    };
+
+    const newTimelineEvent: TimelineEvent = {
+      id: `tl-${Date.now()}`,
+      complaintId: complaint.id,
+      status: complaint.status,
+      message: `${currentUser?.name || 'User'}: ${message.trim()}`,
+      updatedBy: currentUser?.name || 'User',
+      role: currentUser?.role || 'student',
+      timestamp,
+      isInternal,
+    };
+
+    const updated: Complaint = {
+      ...complaint,
+      updatedAt: timestamp,
+      comments: [...(complaint.comments || []), newComment],
+      timeline: [...complaint.timeline, newTimelineEvent],
+    };
+
+    complaints[index] = updated;
+    setStorageItem(STORAGE_KEYS.COMPLAINTS, complaints);
+
+    // If student commented, notify admin
+    if (currentUser?.role === 'student') {
+      try {
+        await notificationService.createNotification({
+          userId: 'user-admin-1',
+          title: 'New Student Comment',
+          message: `${currentUser.name} added a comment on ${complaint.ticketNumber}: "${message.slice(0, 60)}..."`,
+          type: 'info',
+          link: `/admin/complaints/${complaint.id}`,
+        });
+      } catch (e) {
+        console.warn('Could not dispatch comment notification:', e);
+      }
+    }
+
+    return updated;
+  }
+
+  public async reopenComplaint(
+    complaintId: string,
+    reason: string
+  ): Promise<Complaint> {
+    this.ensureInitialized();
+    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    const currentUser = authService.getCurrentUser();
+    const index = complaints.findIndex(
+      (c) => c.id === complaintId || c.ticketNumber === complaintId
+    );
+
+    if (index === -1) {
+      throw new Error(`Complaint with ID ${complaintId} not found`);
+    }
+
+    const complaint = complaints[index];
+    if (complaint.status !== 'resolved' && complaint.status !== 'rejected') {
+      throw new Error('Only resolved or rejected complaints can be reopened');
+    }
+
+    const timestamp = new Date().toISOString();
+    const reopenEvent: TimelineEvent = {
+      id: `tl-${Date.now()}`,
+      complaintId: complaint.id,
+      status: 'pending',
+      message: `Complaint reopened by student. Reason: ${reason.trim()}`,
+      updatedBy: currentUser?.name || 'Student',
+      role: 'student',
+      timestamp,
+    };
+
+    const updated: Complaint = {
+      ...complaint,
+      status: 'pending',
+      reopenReason: reason.trim(),
+      reopenedAt: timestamp,
+      updatedAt: timestamp,
+      timeline: [...complaint.timeline, reopenEvent],
+    };
+
+    complaints[index] = updated;
+    setStorageItem(STORAGE_KEYS.COMPLAINTS, complaints);
+
+    // Notify admin
+    try {
+      await notificationService.createNotification({
+        userId: 'user-admin-1',
+        title: 'Complaint Reopened',
+        message: `${complaint.ticketNumber} was reopened by ${currentUser?.name || 'Student'}: "${reason.trim()}"`,
+        type: 'warning',
+        link: `/admin/complaints/${complaint.id}`,
+      });
+    } catch (e) {
+      console.warn('Could not dispatch reopen notification:', e);
+    }
+
+    return updated;
+  }
+
+  public async rateSatisfaction(
+    complaintId: string,
+    rating: 'satisfied' | 'not_satisfied',
+    feedback?: string
+  ): Promise<Complaint> {
+    this.ensureInitialized();
+    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    const currentUser = authService.getCurrentUser();
+    const index = complaints.findIndex(
+      (c) => c.id === complaintId || c.ticketNumber === complaintId
+    );
+
+    if (index === -1) {
+      throw new Error(`Complaint with ID ${complaintId} not found`);
+    }
+
+    const complaint = complaints[index];
+    if (complaint.status !== 'resolved') {
+      throw new Error('Satisfaction rating is only available for resolved complaints');
+    }
+
+    const timestamp = new Date().toISOString();
+    const ratingEvent: TimelineEvent = {
+      id: `tl-${Date.now()}`,
+      complaintId: complaint.id,
+      status: 'resolved',
+      message: `Student recorded feedback: ${
+        rating === 'satisfied' ? 'Satisfied 😊' : 'Not Satisfied 🙁'
+      }${feedback ? ` - "${feedback.trim()}"` : ''}`,
+      updatedBy: currentUser?.name || 'Student',
+      role: 'student',
+      timestamp,
+    };
+
+    const updated: Complaint = {
+      ...complaint,
+      satisfaction: {
+        rating,
+        feedback: feedback?.trim() || undefined,
+        submittedAt: timestamp,
+      },
+      updatedAt: timestamp,
+      timeline: [...complaint.timeline, ratingEvent],
     };
 
     complaints[index] = updated;
