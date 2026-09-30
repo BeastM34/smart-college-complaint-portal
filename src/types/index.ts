@@ -11,9 +11,29 @@ export interface User {
   role: Role;
   studentId?: string;
   department?: string;
+  year?: string;
   phone?: string;
   avatarUrl?: string;
+  password?: string; // Stored securely in mock database
   createdAt: string;
+}
+
+export interface RegisterData {
+  name: string;
+  studentId: string;
+  email: string;
+  department: string;
+  year: string;
+  phone: string;
+  password: string;
+  confirmPassword?: string;
+  termsAccepted: boolean;
+}
+
+export interface LoginCredentials {
+  email: string;
+  password: string;
+  rememberMe?: boolean;
 }
 
 export type ComplaintStatus =
@@ -133,17 +153,4 @@ export interface FilterOptions {
   searchQuery?: string;
   sortBy?: 'createdAt' | 'priority' | 'updatedAt';
   sortOrder?: 'asc' | 'desc';
-}
-
-export interface PaginationParams {
-  page: number;
-  pageSize: number;
-}
-
-export interface PaginatedResult<T> {
-  data: T[];
-  total: number;
-  page: number;
-  pageSize: number;
-  totalPages: number;
 }

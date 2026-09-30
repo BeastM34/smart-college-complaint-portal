@@ -1,109 +1,362 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { User, Mail, Lock, Building2, UserPlus, Info } from 'lucide-react';
-import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter, Input, Select } from '@/components/common';
+import {
+  User as UserIcon,
+  Mail,
+  Lock,
+  Building2,
+  Calendar,
+  Phone,
+  UserPlus,
+  Eye,
+  EyeOff,
+  AlertCircle,
+  GraduationCap,
+} from 'lucide-react';
+import {
+  Button,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+  Input,
+  Select,
+} from '@/components/common';
+import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 
 export const RegisterPage: React.FC = () => {
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
   const [studentId, setStudentId] = useState('');
+  const [email, setEmail] = useState('');
   const [department, setDepartment] = useState('Computer Science & Engineering');
-  const [loading, setLoading] = useState(false);
+  const [year, setYear] = useState('1st Year');
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
-  const { info } = useToast();
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [generalError, setGeneralError] = useState<string | null>(null);
+
+  const { register, user, isAuthenticated } = useAuth();
+  const { success, error: toastError } = useToast();
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // If already logged in, redirect to respective dashboard
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      navigate(user.role === 'admin' ? '/admin/dashboard' : '/student/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, user, navigate]);
+
+  const validateForm = (): boolean => {
+    const errs: Record<string, string> = {};
+
+    if (!name.trim()) errs.name = 'Full name is required.';
+    if (!studentId.trim()) errs.studentId = 'Student ID / Roll number is required.';
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email.trim()) {
+      errs.email = 'College email address is required.';
+    } else if (!emailRegex.test(email.trim())) {
+      errs.email = 'Please provide a valid email format (e.g. name@college.edu).';
+    }
+
+    if (!phone.trim()) {
+      errs.phone = 'Mobile contact number is required.';
+    } else if (phone.trim().replace(/\D/g, '').length < 7) {
+      errs.phone = 'Please enter a valid phone number with at least 7 digits.';
+    }
+
+    if (!password) {
+      errs.password = 'Password is required.';
+    } else if (password.length < 6) {
+      errs.password = 'Password must be at least 6 characters long.';
+    }
+
+    if (!confirmPassword) {
+      errs.confirmPassword = 'Please confirm your password.';
+    } else if (password !== confirmPassword) {
+      errs.confirmPassword = 'Passwords do not match.';
+    }
+
+    if (!termsAccepted) {
+      errs.terms = 'You must agree to the college portal terms of service.';
+    }
+
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    setGeneralError(null);
+
+    if (!validateForm()) {
+      return;
+    }
+
     setLoading(true);
-    setTimeout(() => {
+    try {
+      const newUser = await register({
+        name,
+        studentId,
+        email,
+        department,
+        year,
+        phone,
+        password,
+        confirmPassword,
+        termsAccepted,
+      });
+
+      success(`Welcome to SmartCampus, ${newUser.name}!`, 'Account Created');
+      navigate('/student/dashboard', { replace: true });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Registration failed. Please try again.';
+      setGeneralError(msg);
+      toastError(msg, 'Registration Error');
+    } finally {
       setLoading(false);
-      info('Student registration form ready for Phase 2 authentication integration.', 'Phase 1 Foundation');
-      navigate('/login');
-    }, 600);
+    }
   };
 
   return (
-    <div className="min-h-[80vh] flex items-center justify-center px-4 py-12">
-      <div className="w-full max-w-md space-y-6">
+    <div className="min-h-[85vh] flex items-center justify-center px-4 py-12">
+      <div className="w-full max-w-xl space-y-6">
+        {/* Header */}
         <div className="text-center space-y-2">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/25 mb-1">
+            <GraduationCap className="w-7 h-7" />
+          </div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
             Student Account Registration
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Create your campus profile to submit and monitor facility complaints
-          </p>
-        </div>
-
-        <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-100 dark:bg-blue-950/40 dark:border-blue-900/60 flex items-start gap-2.5 text-xs text-blue-800 dark:text-blue-300">
-          <Info className="w-4 h-4 shrink-0 mt-0.5 text-blue-600 dark:text-blue-400" />
-          <p>
-            <strong>Phase 1 Scaffolding:</strong> Full student identity verification and registration workflow will be connected in Phase 2.
+            Create your student profile to report hostel, electrical, and campus facilities complaints
           </p>
         </div>
 
         <Card>
-          <CardHeader>
-            <CardTitle>Profile Details</CardTitle>
+          <CardHeader className="pb-3">
+            <CardTitle>Academic & Identity Details</CardTitle>
             <CardDescription>
-              Use your official institutional email to verify student status.
+              Only currently enrolled students can register through this portal.
             </CardDescription>
           </CardHeader>
 
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleRegister}>
             <CardContent className="space-y-4">
-              <Input
-                label="Full Name"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Jordan Smith"
-                leftIcon={<User className="w-4 h-4" />}
-              />
+              {generalError && (
+                <div
+                  role="alert"
+                  className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 dark:bg-rose-950/60 dark:border-rose-900 dark:text-rose-200 flex items-start gap-2.5 text-xs animate-in fade-in"
+                >
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
+                  <span>{generalError}</span>
+                </div>
+              )}
 
-              <Input
-                label="Student ID / Roll Number"
-                required
-                value={studentId}
-                onChange={(e) => setStudentId(e.target.value)}
-                placeholder="e.g. STU2026-9021"
-                leftIcon={<Building2 className="w-4 h-4" />}
-              />
+              {/* Full Name & Student ID */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Input
+                  label="Full Name"
+                  required
+                  value={name}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (errors.name) setErrors((prev) => ({ ...prev, name: '' }));
+                  }}
+                  error={errors.name}
+                  placeholder="e.g. Jordan Smith"
+                  leftIcon={<UserIcon className="w-4 h-4" />}
+                />
 
-              <Select
-                label="Department"
-                value={department}
-                onChange={(e) => setDepartment(e.target.value)}
-                options={[
-                  { value: 'Computer Science & Engineering', label: 'Computer Science & Engineering' },
-                  { value: 'Electrical & Electronics', label: 'Electrical & Electronics' },
-                  { value: 'Mechanical Engineering', label: 'Mechanical Engineering' },
-                  { value: 'Civil & Environmental', label: 'Civil & Environmental' },
-                  { value: 'Business Administration', label: 'Business Administration' },
-                ]}
-              />
+                <Input
+                  label="Student ID / Roll No."
+                  required
+                  value={studentId}
+                  onChange={(e) => {
+                    setStudentId(e.target.value);
+                    if (errors.studentId) setErrors((prev) => ({ ...prev, studentId: '' }));
+                  }}
+                  error={errors.studentId}
+                  placeholder="e.g. STU2026-9021"
+                  leftIcon={<Building2 className="w-4 h-4" />}
+                />
+              </div>
 
-              <Input
-                label="College Email"
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="student@campus.edu"
-                leftIcon={<Mail className="w-4 h-4" />}
-              />
+              {/* Email & Phone */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Input
+                  label="College Email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (errors.email) setErrors((prev) => ({ ...prev, email: '' }));
+                  }}
+                  error={errors.email}
+                  placeholder="student@college.edu"
+                  leftIcon={<Mail className="w-4 h-4" />}
+                />
 
-              <Input
-                label="Create Password"
-                type="password"
-                required
-                placeholder="••••••••"
-                leftIcon={<Lock className="w-4 h-4" />}
-              />
+                <Input
+                  label="Mobile Contact"
+                  type="tel"
+                  required
+                  value={phone}
+                  onChange={(e) => {
+                    setPhone(e.target.value);
+                    if (errors.phone) setErrors((prev) => ({ ...prev, phone: '' }));
+                  }}
+                  error={errors.phone}
+                  placeholder="+1 (555) 000-0000"
+                  leftIcon={<Phone className="w-4 h-4" />}
+                />
+              </div>
+
+              {/* Department & Year */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Select
+                  label="Department"
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                  options={[
+                    { value: 'Computer Science & Engineering', label: 'Computer Science & Engineering' },
+                    { value: 'Electrical & Electronics', label: 'Electrical & Electronics' },
+                    { value: 'Mechanical Engineering', label: 'Mechanical Engineering' },
+                    { value: 'Civil & Environmental', label: 'Civil & Environmental' },
+                    { value: 'Business Administration', label: 'Business Administration' },
+                    { value: 'Biotechnology & Life Sciences', label: 'Biotechnology & Life Sciences' },
+                  ]}
+                />
+
+                <Select
+                  label="Academic Year"
+                  value={year}
+                  onChange={(e) => setYear(e.target.value)}
+                  options={[
+                    { value: '1st Year', label: '1st Year (Freshman)' },
+                    { value: '2nd Year', label: '2nd Year (Sophomore)' },
+                    { value: '3rd Year', label: '3rd Year (Junior)' },
+                    { value: '4th Year', label: '4th Year (Senior)' },
+                    { value: 'Graduate / Postgrad', label: 'Graduate / Postgrad' },
+                  ]}
+                />
+              </div>
+
+              {/* Password & Confirm Password */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="reg-password"
+                    className="block text-xs font-medium text-slate-700 dark:text-slate-300"
+                  >
+                    Create Password <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3 flex items-center pointer-events-none text-slate-400">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <input
+                      id="reg-password"
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      value={password}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        if (errors.password) setErrors((prev) => ({ ...prev, password: '' }));
+                      }}
+                      placeholder="Min. 6 chars"
+                      className="flex h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-10 py-1.5 text-sm text-slate-900 shadow-sm transition-colors placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      className="absolute right-3 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {errors.password && (
+                    <p className="text-xs text-rose-500 mt-1">{errors.password}</p>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="reg-confirm-password"
+                    className="block text-xs font-medium text-slate-700 dark:text-slate-300"
+                  >
+                    Confirm Password <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative flex items-center">
+                    <div className="absolute left-3 flex items-center pointer-events-none text-slate-400">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <input
+                      id="reg-confirm-password"
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      required
+                      value={confirmPassword}
+                      onChange={(e) => {
+                        setConfirmPassword(e.target.value);
+                        if (errors.confirmPassword) setErrors((prev) => ({ ...prev, confirmPassword: '' }));
+                      }}
+                      placeholder="Repeat password"
+                      className="flex h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-10 py-1.5 text-sm text-slate-900 shadow-sm transition-colors placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword((prev) => !prev)}
+                      className="absolute right-3 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                      aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {errors.confirmPassword && (
+                    <p className="text-xs text-rose-500 mt-1">{errors.confirmPassword}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Terms Checkbox */}
+              <div className="pt-1">
+                <label className="flex items-start gap-2.5 cursor-pointer text-xs text-slate-600 dark:text-slate-400 select-none">
+                  <input
+                    type="checkbox"
+                    checked={termsAccepted}
+                    onChange={(e) => {
+                      setTermsAccepted(e.target.checked);
+                      if (errors.terms) setErrors((prev) => ({ ...prev, terms: '' }));
+                    }}
+                    className="w-4 h-4 mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900 cursor-pointer"
+                  />
+                  <span>
+                    I confirm that I am an actively enrolled student and agree to the{' '}
+                    <span className="text-indigo-600 dark:text-indigo-400 font-medium hover:underline">
+                      Campus Portal Code of Conduct
+                    </span>
+                    .
+                  </span>
+                </label>
+                {errors.terms && (
+                  <p className="text-xs text-rose-500 mt-1 pl-6.5">{errors.terms}</p>
+                )}
+              </div>
             </CardContent>
 
-            <CardFooter className="flex flex-col gap-3">
+            <CardFooter className="flex flex-col gap-3 pt-2">
               <Button
                 type="submit"
                 variant="primary"

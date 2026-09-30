@@ -6,6 +6,9 @@ import { PublicLayout } from '@/layouts/PublicLayout';
 import { StudentLayout } from '@/layouts/StudentLayout';
 import { AdminLayout } from '@/layouts/AdminLayout';
 
+// Guard
+import { ProtectedRoute } from './ProtectedRoute';
+
 // Public Pages
 import { HomePage } from '@/pages/public/HomePage';
 import { LoginPage } from '@/pages/public/LoginPage';
@@ -44,28 +47,32 @@ export const AppRoutes: React.FC = () => {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       </Route>
 
-      {/* Student Routes */}
-      <Route path="/student" element={<StudentLayout />}>
-        <Route index element={<Navigate to="/student/dashboard" replace />} />
-        <Route path="dashboard" element={<StudentDashboardPage />} />
-        <Route path="complaints" element={<StudentComplaintsPage />} />
-        <Route path="complaints/new" element={<NewComplaintPage />} />
-        <Route path="complaints/:id" element={<ComplaintDetailPage />} />
-        <Route path="notifications" element={<StudentNotificationsPage />} />
-        <Route path="profile" element={<StudentProfilePage />} />
+      {/* Protected Student Routes */}
+      <Route element={<ProtectedRoute requiredRole="student" />}>
+        <Route path="/student" element={<StudentLayout />}>
+          <Route index element={<Navigate to="/student/dashboard" replace />} />
+          <Route path="dashboard" element={<StudentDashboardPage />} />
+          <Route path="complaints" element={<StudentComplaintsPage />} />
+          <Route path="complaints/new" element={<NewComplaintPage />} />
+          <Route path="complaints/:id" element={<ComplaintDetailPage />} />
+          <Route path="notifications" element={<StudentNotificationsPage />} />
+          <Route path="profile" element={<StudentProfilePage />} />
+        </Route>
       </Route>
 
-      {/* Admin Routes */}
-      <Route path="/admin" element={<AdminLayout />}>
-        <Route index element={<Navigate to="/admin/dashboard" replace />} />
-        <Route path="dashboard" element={<AdminDashboardPage />} />
-        <Route path="complaints" element={<AdminComplaintsPage />} />
-        <Route path="complaints/:id" element={<AdminComplaintDetailPage />} />
-        <Route path="analytics" element={<AdminAnalyticsPage />} />
-        <Route path="users" element={<AdminUsersPage />} />
-        <Route path="categories" element={<AdminCategoriesPage />} />
-        <Route path="notifications" element={<AdminNotificationsPage />} />
-        <Route path="settings" element={<AdminSettingsPage />} />
+      {/* Protected Admin Routes */}
+      <Route element={<ProtectedRoute requiredRole="admin" />}>
+        <Route path="/admin" element={<AdminLayout />}>
+          <Route index element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="dashboard" element={<AdminDashboardPage />} />
+          <Route path="complaints" element={<AdminComplaintsPage />} />
+          <Route path="complaints/:id" element={<AdminComplaintDetailPage />} />
+          <Route path="analytics" element={<AdminAnalyticsPage />} />
+          <Route path="users" element={<AdminUsersPage />} />
+          <Route path="categories" element={<AdminCategoriesPage />} />
+          <Route path="notifications" element={<AdminNotificationsPage />} />
+          <Route path="settings" element={<AdminSettingsPage />} />
+        </Route>
       </Route>
 
       {/* 404 Fallback */}
@@ -75,11 +82,11 @@ export const AppRoutes: React.FC = () => {
           <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50 dark:bg-slate-950">
             <EmptyState
               title="Page Not Found (404)"
-              description="The path you navigated to does not exist in the Smart College Complaint Portal."
+              description="The requested page could not be found within the Smart College Complaint Portal."
               action={
                 <Link to="/">
                   <Button variant="primary" size="sm">
-                    Back to Home
+                    Return to Home
                   </Button>
                 </Link>
               }

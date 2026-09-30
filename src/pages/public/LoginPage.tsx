@@ -1,138 +1,230 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Lock, LogIn, Sparkles, GraduationCap } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Mail, Lock, LogIn, Sparkles, GraduationCap, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter, Input } from '@/components/common';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
-import type { Role } from '@/types';
 
 export const LoginPage: React.FC = () => {
-  const [email, setEmail] = useState('alex.johnson@campus.edu');
-  const [password, setPassword] = useState('password123');
-  const [role, setRole] = useState<Role>('student');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const { login } = useAuth();
-  const { success } = useToast();
+  const { login, user, isAuthenticated } = useAuth();
+  const { success, error: toastError } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // If already authenticated, redirect to appropriate dashboard
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      navigate(user.role === 'admin' ? '/admin/dashboard' : '/student/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, user, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage(null);
+
+    if (!email.trim()) {
+      setErrorMessage('Please enter your college email address.');
+      return;
+    }
+    if (!password) {
+      setErrorMessage('Please enter your password.');
+      return;
+    }
+
     setLoading(true);
     try {
-      const user = await login(email, role);
-      success(`Welcome back, ${user.name}!`, 'Signed In');
-      navigate(user.role === 'admin' ? '/admin/dashboard' : '/student/dashboard');
+      const loggedUser = await login(email, password, rememberMe);
+      success(`Welcome back, ${loggedUser.name}!`, 'Signed In');
+      
+      const destination = location.state?.from?.pathname || (loggedUser.role === 'admin' ? '/admin/dashboard' : '/student/dashboard');
+      navigate(destination, { replace: true });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Invalid credentials. Please verify your email and password.';
+      setErrorMessage(msg);
+      toastError(msg, 'Authentication Failed');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleQuickDemo = async (demoRole: Role, demoEmail: string) => {
+  const handleDemoLogin = async (demoEmail: string, demoPass: string, roleName: string) => {
     setEmail(demoEmail);
-    setRole(demoRole);
+    setPassword(demoPass);
+    setErrorMessage(null);
     setLoading(true);
+
     try {
-      const user = await login(demoEmail, demoRole);
-      success(`Logged in as ${user.name} (${demoRole.toUpperCase()})`, 'Demo Access');
-      navigate(demoRole === 'admin' ? '/admin/dashboard' : '/student/dashboard');
+      const loggedUser = await login(demoEmail, demoPass, true);
+      success(`Logged in as ${loggedUser.name} (${roleName})`, 'Demo Access');
+      navigate(loggedUser.role === 'admin' ? '/admin/dashboard' : '/student/dashboard', { replace: true });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to authenticate demo user.';
+      setErrorMessage(msg);
+      toastError(msg, 'Demo Access Error');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-[80vh] flex items-center justify-center px-4 py-12">
+    <div className="min-h-[82vh] flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md space-y-6">
+        {/* Header Branding */}
         <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/25 mb-2">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/25 mb-1">
             <GraduationCap className="w-7 h-7" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            Welcome to SmartCampus
+            Sign In to SmartCampus
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Sign in to submit complaints or access administrative dashboards
+            Enter your college credentials to submit issues or manage facility queues
           </p>
         </div>
 
-        {/* Quick Demo Login Preset Buttons */}
-        <div className="p-3.5 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/60 space-y-2">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-900 dark:text-indigo-300">
-            <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-            <span>Phase 1 Quick Demo Presets:</span>
+        {/* Demo Login Buttons Panel */}
+        <div className="p-4 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/50 border border-indigo-200/80 dark:border-indigo-900/80 space-y-2.5 shadow-xs">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-900 dark:text-indigo-200">
+              <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>Instant Demo Login</span>
+            </div>
+            <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">
+              Click to sign in instantly
+            </span>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+
+          <div className="grid grid-cols-2 gap-2.5">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => handleQuickDemo('student', 'alex.johnson@campus.edu')}
-              className="bg-white dark:bg-slate-900 text-xs"
+              isLoading={loading}
+              onClick={() => handleDemoLogin('student@college.edu', 'student123', 'Student')}
+              className="bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800 hover:border-indigo-400 text-xs py-2 flex flex-col items-center justify-center h-auto gap-0.5"
             >
-              Demo Student
+              <span className="font-semibold text-indigo-950 dark:text-indigo-100">Demo Student</span>
+              <span className="text-[10px] text-slate-400 font-mono">student@college.edu</span>
             </Button>
+
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => handleQuickDemo('admin', 'admin.connor@campus.edu')}
-              className="bg-white dark:bg-slate-900 text-xs"
+              isLoading={loading}
+              onClick={() => handleDemoLogin('admin@college.edu', 'admin123', 'Administrator')}
+              className="bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800 hover:border-indigo-400 text-xs py-2 flex flex-col items-center justify-center h-auto gap-0.5"
             >
-              Demo Admin
+              <span className="font-semibold text-indigo-950 dark:text-indigo-100">Demo Admin</span>
+              <span className="text-[10px] text-slate-400 font-mono">admin@college.edu</span>
             </Button>
           </div>
         </div>
 
+        {/* Login Form Card */}
         <Card>
-          <CardHeader>
+          <CardHeader className="pb-3">
             <CardTitle>Account Credentials</CardTitle>
             <CardDescription>
-              Enter your college email address and password to continue.
+              Sign in with your registered college email and password.
             </CardDescription>
           </CardHeader>
 
           <form onSubmit={handleLogin}>
             <CardContent className="space-y-4">
+              {errorMessage && (
+                <div
+                  role="alert"
+                  className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 dark:bg-rose-950/60 dark:border-rose-900 dark:text-rose-200 flex items-start gap-2.5 text-xs animate-in fade-in"
+                >
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
+                  <span>{errorMessage}</span>
+                </div>
+              )}
+
               <Input
                 label="College Email"
                 type="email"
                 required
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="student@campus.edu"
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setErrorMessage(null);
+                }}
+                placeholder="student@college.edu"
                 leftIcon={<Mail className="w-4 h-4" />}
               />
 
-              <Input
-                label="Password"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                leftIcon={<Lock className="w-4 h-4" />}
-              />
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="password"
+                    className="block text-xs font-medium text-slate-700 dark:text-slate-300"
+                  >
+                    Password <span className="text-rose-500">*</span>
+                  </label>
+                  <Link
+                    to="/forgot-password"
+                    className="text-xs font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 transition-colors"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
 
-              <div className="flex items-center justify-between text-xs">
-                <label className="flex items-center gap-2 cursor-pointer text-slate-600 dark:text-slate-400">
+                <div className="relative flex items-center">
+                  <div className="absolute left-3 flex items-center pointer-events-none text-slate-400">
+                    <Lock className="w-4 h-4" />
+                  </div>
+
+                  <input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      setErrorMessage(null);
+                    }}
+                    placeholder="••••••••"
+                    className="flex h-9 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-10 py-1.5 text-sm text-slate-900 shadow-sm transition-colors placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="absolute right-3 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center text-xs">
+                <label className="flex items-center gap-2 cursor-pointer text-slate-600 dark:text-slate-400 select-none">
                   <input
                     type="checkbox"
-                    defaultChecked
-                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-700"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900 cursor-pointer"
                   />
-                  <span>Remember me</span>
+                  <span>Remember me for 30 days</span>
                 </label>
-                <Link
-                  to="/forgot-password"
-                  className="font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
-                >
-                  Forgot password?
-                </Link>
               </div>
             </CardContent>
 
-            <CardFooter className="flex flex-col gap-3">
+            <CardFooter className="flex flex-col gap-3 pt-2">
               <Button
                 type="submit"
                 variant="primary"
@@ -140,11 +232,11 @@ export const LoginPage: React.FC = () => {
                 isLoading={loading}
                 leftIcon={<LogIn className="w-4 h-4" />}
               >
-                Sign In to Portal
+                Sign In
               </Button>
 
               <p className="text-center text-xs text-slate-500 dark:text-slate-400">
-                New student?{' '}
+                New student without an account?{' '}
                 <Link
                   to="/register"
                   className="font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
