@@ -79,8 +79,11 @@ export interface Complaint {
   studentName: string;
   studentEmail?: string;
   department?: string;
-  location?: string;
+  building?: string;
+  floor?: string;
   roomNumber?: string;
+  location?: string;
+  additionalDetails?: string;
   attachments?: string[];
   assignedTo?: string;
   assignedStaffName?: string;

@@ -261,7 +261,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 1. In Progress (Student 1)
   {
     id: 'cmp-1001',
-    ticketNumber: 'CMP-2026-001',
+    ticketNumber: 'CMP-1001',
     title: 'AC Unit not cooling in CS Lab 304',
     description: 'The central split air conditioner in CS Lab 304 has stopped cooling and is making a loud buzzing noise during class sessions.',
     category: 'infrastructure',
@@ -311,7 +311,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 2. Assigned (Student 1)
   {
     id: 'cmp-1002',
-    ticketNumber: 'CMP-2026-002',
+    ticketNumber: 'CMP-1002',
     title: 'Severe water leakage in Hostel Block 4 washroom',
     description: 'The common washroom pipeline on the 2nd floor is leaking continuously, causing water accumulation near rooms 210-215.',
     category: 'hostel',
@@ -352,7 +352,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 3. Pending (Student 1)
   {
     id: 'cmp-1003',
-    ticketNumber: 'CMP-2026-003',
+    ticketNumber: 'CMP-1003',
     title: 'Broken projector HDMI port in Seminar Hall 1',
     description: 'The podium HDMI connector is damaged and causing flickering display during lecture presentations.',
     category: 'academic',
@@ -382,7 +382,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 4. Resolved (Student 1)
   {
     id: 'cmp-1004',
-    ticketNumber: 'CMP-2026-004',
+    ticketNumber: 'CMP-1004',
     title: 'Faulty ceiling light in Study Room B',
     description: 'Fluorescent tube was flickering continuously causing eye strain.',
     category: 'electrical',
@@ -432,7 +432,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 5. Rejected (Student 1)
   {
     id: 'cmp-1005',
-    ticketNumber: 'CMP-2026-005',
+    ticketNumber: 'CMP-1005',
     title: 'Request for personal study chairs in corridor',
     description: 'Requested moving upholstered chairs from reading lounge into corridor for private study.',
     category: 'library',
@@ -471,7 +471,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 6. Resolved (Student 1)
   {
     id: 'cmp-1006',
-    ticketNumber: 'CMP-2026-006',
+    ticketNumber: 'CMP-1006',
     title: 'Broken window latch in Dorm Room 312',
     description: 'The window latch on the east-facing window was loose and rattling in high winds.',
     category: 'hostel',
@@ -512,7 +512,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 7. Pending (Student 1)
   {
     id: 'cmp-1007',
-    ticketNumber: 'CMP-2026-007',
+    ticketNumber: 'CMP-1007',
     title: 'Water dispenser cooling malfunction in Canteen West',
     description: 'Water dispenser is outputting room-temperature water instead of chilled drinking water.',
     category: 'canteen',
@@ -542,7 +542,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 8. Other Student Complaints (Student 2 - Priya)
   {
     id: 'cmp-1008',
-    ticketNumber: 'CMP-2026-008',
+    ticketNumber: 'CMP-1008',
     title: 'Oscilloscope power cord frayed in VLSI Lab',
     description: 'Workstation 12 oscilloscope cord has exposed copper insulation near the plug.',
     category: 'academic',
@@ -582,7 +582,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 9. Student 3 - Marcus
   {
     id: 'cmp-1009',
-    ticketNumber: 'CMP-2026-009',
+    ticketNumber: 'CMP-1009',
     title: 'Hydraulic press leaking oil in Workshop Bay 3',
     description: 'Minor hydraulic fluid pooling near the safety gate of the 50-ton hydraulic press.',
     category: 'infrastructure',
@@ -613,7 +613,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 10. Student 4 - Aisha
   {
     id: 'cmp-1010',
-    ticketNumber: 'CMP-2026-010',
+    ticketNumber: 'CMP-1010',
     title: 'Cracked paver on pedestrian walkway near Gate 2',
     description: 'Tripping hazard due to lifted stone pavers after rain settlement.',
     category: 'infrastructure',
@@ -654,7 +654,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 11. Student 5 - Liam
   {
     id: 'cmp-1011',
-    ticketNumber: 'CMP-2026-011',
+    ticketNumber: 'CMP-1011',
     title: 'Autoclave temperature sensor calibration discrepancy',
     description: 'Unit shows 121C digital readout while analog gauge reads 115C.',
     category: 'academic',
@@ -685,7 +685,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 12. Student 6 - Sophia
   {
     id: 'cmp-1012',
-    ticketNumber: 'CMP-2026-012',
+    ticketNumber: 'CMP-1012',
     title: 'Ceiling speaker rattling in Executive Auditorium',
     description: 'Audio resonance during microphones testing makes speech unintelligible.',
     category: 'infrastructure',
@@ -715,7 +715,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 13. Student 7 - David
   {
     id: 'cmp-1013',
-    ticketNumber: 'CMP-2026-013',
+    ticketNumber: 'CMP-1013',
     title: 'Network jack loose in Computer Lab 102',
     description: 'Ethernet port at desk 14 is pushed back into the wall gang box.',
     category: 'electrical',
@@ -746,7 +746,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 14. Student 8 - Emma
   {
     id: 'cmp-1014',
-    ticketNumber: 'CMP-2026-014',
+    ticketNumber: 'CMP-1014',
     title: 'Drafting table tilt mechanism jammed in Studio 4',
     description: 'Angle lock lever on table #6 has sheared internal gears.',
     category: 'infrastructure',
@@ -778,7 +778,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 15. Student 9 - Rohan
   {
     id: 'cmp-1015',
-    ticketNumber: 'CMP-2026-015',
+    ticketNumber: 'CMP-1015',
     title: 'Exhaust fan stopped working in Chemistry Store',
     description: 'Chemical reagent storage room lacks adequate ventilation.',
     category: 'sanitation',
@@ -809,7 +809,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 16. Student 10 - Zoya
   {
     id: 'cmp-1016',
-    ticketNumber: 'CMP-2026-016',
+    ticketNumber: 'CMP-1016',
     title: 'Fume hood sash counterbalance stuck',
     description: 'Sash cable jumped pulley; cannot raise hood above 4 inches.',
     category: 'academic',
@@ -840,7 +840,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 17. Campus Transport (Student 1)
   {
     id: 'cmp-1017',
-    ticketNumber: 'CMP-2026-017',
+    ticketNumber: 'CMP-1017',
     title: 'North Gate shuttle bus shelter lighting unlit',
     description: 'Solar light fixture on the evening shuttle stop is completely dark after 7 PM.',
     category: 'transport',
@@ -870,7 +870,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 18. Hostel sanitation (Student 2)
   {
     id: 'cmp-1018',
-    ticketNumber: 'CMP-2026-018',
+    ticketNumber: 'CMP-1018',
     title: 'Garbage bins overflowing near Hostel Block 2 entrance',
     description: 'Recycling and food waste bins require immediate clearing.',
     category: 'sanitation',
@@ -902,7 +902,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 19. Sports complex infrastructure (Student 3)
   {
     id: 'cmp-1019',
-    ticketNumber: 'CMP-2026-019',
+    ticketNumber: 'CMP-1019',
     title: 'Badminton Court 2 net post tensioner broken',
     description: 'Ratchet crank on east badminton post is stripped and will not hold net tension.',
     category: 'infrastructure',
@@ -932,7 +932,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 20. Library power strip (Student 1)
   {
     id: 'cmp-1020',
-    ticketNumber: 'CMP-2026-020',
+    ticketNumber: 'CMP-1020',
     title: 'Study Desk Row 8 power strip tripped and dead',
     description: 'All 6 power sockets at study table row 8 have lost power.',
     category: 'electrical',
@@ -972,7 +972,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 21. Canteen ventilation (Student 4)
   {
     id: 'cmp-1021',
-    ticketNumber: 'CMP-2026-021',
+    ticketNumber: 'CMP-1021',
     title: 'Kitchen exhaust smoke leaking into dining area',
     description: 'Heavy cooking fumes entering South dining hall during lunch rush.',
     category: 'canteen',
@@ -1003,7 +1003,7 @@ export const MOCK_COMPLAINTS: Complaint[] = [
   // 22. Academic Building Elevator (Student 5)
   {
     id: 'cmp-1022',
-    ticketNumber: 'CMP-2026-022',
+    ticketNumber: 'CMP-1022',
     title: 'Elevator #2 in Science Block jerky stopping',
     description: 'Elevator stops 2 inches below floor level on Floor 3.',
     category: 'infrastructure',
@@ -1037,7 +1037,7 @@ export const MOCK_NOTIFICATIONS: Notification[] = [
     id: 'notif-1',
     userId: 'user-student-1',
     title: 'Complaint In Progress',
-    message: 'Technician has begun working on ticket CMP-2026-001 (AC Unit not cooling).',
+    message: 'Technician has begun working on ticket CMP-1001 (AC Unit not cooling).',
     type: 'info',
     read: false,
     link: '/student/complaints/cmp-1001',
@@ -1047,7 +1047,7 @@ export const MOCK_NOTIFICATIONS: Notification[] = [
     id: 'notif-2',
     userId: 'user-student-1',
     title: 'Complaint Resolved',
-    message: 'Your ticket CMP-2026-004 has been marked as resolved.',
+    message: 'Your ticket CMP-1004 has been marked as resolved.',
     type: 'success',
     read: true,
     link: '/student/complaints/cmp-1004',
@@ -1057,7 +1057,7 @@ export const MOCK_NOTIFICATIONS: Notification[] = [
     id: 'notif-3',
     userId: 'user-student-1',
     title: 'Emergency Plumbing Assigned',
-    message: 'Marcus Brody assigned to CMP-2026-002 (Hostel Block 4 washroom leak).',
+    message: 'Marcus Brody assigned to CMP-1002 (Hostel Block 4 washroom leak).',
     type: 'warning',
     read: false,
     link: '/student/complaints/cmp-1002',
@@ -1067,7 +1067,7 @@ export const MOCK_NOTIFICATIONS: Notification[] = [
     id: 'notif-4',
     userId: 'user-student-1',
     title: 'Work Underway on Library Outlets',
-    message: 'Breaker reset underway for ticket CMP-2026-020.',
+    message: 'Breaker reset underway for ticket CMP-1020.',
     type: 'info',
     read: false,
     link: '/student/complaints/cmp-1020',

@@ -15,9 +15,11 @@ import {
   Pagination,
 } from '@/components/common';
 import { useComplaints } from '@/hooks/useComplaints';
+import { useAuth } from '@/hooks/useAuth';
 import type { ComplaintStatus, Priority } from '@/types';
 
 export const StudentComplaintsPage: React.FC = () => {
+  const { user } = useAuth();
   const { complaints, loading } = useComplaints();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<ComplaintStatus | 'all'>('all');
@@ -25,7 +27,11 @@ export const StudentComplaintsPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 5;
 
-  const filtered = complaints.filter((c) => {
+  const studentComplaints = complaints.filter(
+    (c) => !user || c.studentId === user.id || c.studentEmail === user.email
+  );
+
+  const filtered = studentComplaints.filter((c) => {
     const matchesSearch =
       search === '' ||
       c.title.toLowerCase().includes(search.toLowerCase()) ||

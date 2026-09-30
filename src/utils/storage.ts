@@ -15,19 +15,22 @@ export const STORAGE_KEYS = {
 
 export type StorageKey = typeof STORAGE_KEYS[keyof typeof STORAGE_KEYS];
 
+const memoryStorage = new Map<string, string>();
+
 /**
- * Safely retrieve and parse an item from localStorage
+ * Safely retrieve and parse an item from localStorage (with memory fallback)
  */
 export function getStorageItem<T>(key: StorageKey | string, fallback: T): T {
-  if (typeof window === 'undefined') {
-    return fallback;
-  }
   try {
-    const item = window.localStorage.getItem(key);
-    if (item === null || item === undefined) {
+    const raw =
+      typeof window !== 'undefined' && window.localStorage
+        ? window.localStorage.getItem(key)
+        : memoryStorage.get(key);
+
+    if (raw === null || raw === undefined) {
       return fallback;
     }
-    return JSON.parse(item) as T;
+    return JSON.parse(raw) as T;
   } catch (error) {
     console.warn(`[storage] Failed to parse key "${key}" from localStorage:`, error);
     return fallback;
@@ -35,15 +38,16 @@ export function getStorageItem<T>(key: StorageKey | string, fallback: T): T {
 }
 
 /**
- * Safely serialize and save an item to localStorage
+ * Safely serialize and save an item to localStorage (with memory fallback)
  */
 export function setStorageItem<T>(key: StorageKey | string, value: T): boolean {
-  if (typeof window === 'undefined') {
-    return false;
-  }
   try {
     const serialized = JSON.stringify(value);
-    window.localStorage.setItem(key, serialized);
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(key, serialized);
+    } else {
+      memoryStorage.set(key, serialized);
+    }
     return true;
   } catch (error) {
     console.error(`[storage] Failed to write key "${key}" to localStorage:`, error);
@@ -52,14 +56,15 @@ export function setStorageItem<T>(key: StorageKey | string, value: T): boolean {
 }
 
 /**
- * Safely remove an item from localStorage
+ * Safely remove an item from localStorage (with memory fallback)
  */
 export function removeStorageItem(key: StorageKey | string): boolean {
-  if (typeof window === 'undefined') {
-    return false;
-  }
   try {
-    window.localStorage.removeItem(key);
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.removeItem(key);
+    } else {
+      memoryStorage.delete(key);
+    }
     return true;
   } catch (error) {
     console.error(`[storage] Failed to remove key "${key}" from localStorage:`, error);
@@ -68,26 +73,27 @@ export function removeStorageItem(key: StorageKey | string): boolean {
 }
 
 /**
- * Check if a key exists in localStorage
+ * Check if a key exists in localStorage (with memory fallback)
  */
 export function hasStorageItem(key: StorageKey | string): boolean {
-  if (typeof window === 'undefined') {
-    return false;
+  if (typeof window !== 'undefined' && window.localStorage) {
+    return window.localStorage.getItem(key) !== null;
   }
-  return window.localStorage.getItem(key) !== null;
+  return memoryStorage.has(key);
 }
 
 /**
  * Clear all portal specific keys without wiping other origins
  */
 export function clearAppStorage(): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
   try {
-    Object.values(STORAGE_KEYS).forEach((key) => {
-      window.localStorage.removeItem(key);
-    });
+    if (typeof window !== 'undefined' && window.localStorage) {
+      Object.values(STORAGE_KEYS).forEach((key) => {
+        window.localStorage.removeItem(key);
+      });
+    } else {
+      memoryStorage.clear();
+    }
   } catch (error) {
     console.error('[storage] Failed to clear app storage:', error);
   }

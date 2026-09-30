@@ -9,6 +9,7 @@ import type {
 import { STORAGE_KEYS, getStorageItem, setStorageItem } from '@/utils/storage';
 import { MOCK_COMPLAINTS } from '@/data/mockData';
 import { authService } from './authService';
+import { notificationService } from './notificationService';
 
 /**
  * Complaint Service
@@ -125,9 +126,22 @@ class ComplaintService {
     const currentUser = authService.getCurrentUser();
 
     const timestamp = new Date().toISOString();
-    const nextIndex = complaints.length + 1;
-    const ticketNumber = `CMP-2026-${String(nextIndex).padStart(3, '0')}`;
-    const id = `cmp-${Date.now()}`;
+
+    // Determine next sequential ID (CMP-1001, CMP-1002, CMP-1003...)
+    let maxSeq = 1000;
+    complaints.forEach((c) => {
+      const match = c.ticketNumber.match(/CMP-(?:2026-)?0*(\d+)/i) || c.id.match(/cmp-(\d+)/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxSeq) {
+          maxSeq = num;
+        }
+      }
+    });
+
+    const nextSeq = maxSeq + 1;
+    const ticketNumber = `CMP-${nextSeq}`;
+    const id = `cmp-${nextSeq}`;
 
     const initialTimeline: TimelineEvent = {
       id: `tl-${Date.now()}`,
@@ -151,6 +165,20 @@ class ComplaintService {
 
     const updatedList = [newComplaint, ...complaints];
     setStorageItem(STORAGE_KEYS.COMPLAINTS, updatedList);
+
+    // Create admin notification
+    try {
+      await notificationService.createNotification({
+        userId: 'user-admin-1',
+        title: 'New Complaint Submitted',
+        message: `${ticketNumber}: ${newComplaint.title} (${newComplaint.category} - ${newComplaint.priority.toUpperCase()} priority)`,
+        type: newComplaint.priority === 'critical' ? 'warning' : 'info',
+        link: `/admin/complaints/${id}`,
+      });
+    } catch (e) {
+      console.warn('Could not dispatch admin notification:', e);
+    }
+
     return newComplaint;
   }
 
