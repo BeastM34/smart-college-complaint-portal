@@ -158,6 +158,7 @@ export interface Notification {
   type: NotificationType;
   category?: NotificationCategory | string;
   complaintId?: string;
+  broadcastId?: string;
   read: boolean;
   link?: string;
   createdAt: string;

@@ -4,6 +4,7 @@ import { Mail, Lock, LogIn, Sparkles, GraduationCap, Eye, EyeOff, AlertCircle, C
 import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter, Input } from '@/components/common';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
+import { authService } from '@/services/authService';
 
 export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -34,7 +35,10 @@ export const LoginPage: React.FC = () => {
   // If already authenticated and account is active, redirect to appropriate dashboard
   useEffect(() => {
     if (isAuthenticated && user && (user.status || 'active') !== 'inactive') {
-      navigate(user.role === 'admin' ? '/admin/dashboard' : '/student/dashboard', { replace: true });
+      const live = authService.getLiveUser(user.id);
+      if (live && (live.status || 'active') !== 'inactive') {
+        navigate(user.role === 'admin' ? '/admin/dashboard' : '/student/dashboard', { replace: true });
+      }
     }
   }, [isAuthenticated, user, navigate]);
 

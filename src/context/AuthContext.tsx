@@ -11,6 +11,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   register: (data: RegisterData) => Promise<User>;
   getCurrentUser: () => User | null;
+  validateSession: () => boolean;
   updateProfile: (data: Partial<User>) => Promise<User>;
   changePassword: (oldPass: string, newPass: string) => Promise<void>;
   switchRole: (role: Role) => void;
@@ -19,14 +20,46 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Initialize synchronously from storage to survive page refresh without flicker
-  const [user, setUser] = useState<User | null>(() => authService.getCurrentUser());
+  // Initialize synchronously from storage using pure validation check
+  const [user, setUser] = useState<User | null>(() => {
+    const check = authService.validateSession();
+    return check.isValid ? check.user : null;
+  });
   const [isLoading, setIsLoading] = useState(false);
 
+  // Centralized session validation process
+  const validateSession = useCallback((): boolean => {
+    const sessionCheck = authService.validateSession();
+    if (!sessionCheck.isValid) {
+      if (authService.getSessionUser() || user) {
+        authService.invalidateSession();
+        setUser(null);
+      }
+      return false;
+    }
+    // Synchronize with live storage if updated
+    if (
+      sessionCheck.user &&
+      (!user ||
+        sessionCheck.user.id !== user.id ||
+        sessionCheck.user.role !== user.role ||
+        sessionCheck.user.status !== user.status ||
+        sessionCheck.user.department !== user.department)
+    ) {
+      setUser(sessionCheck.user);
+    }
+    return true;
+  }, [user]);
+
+  // Centralized effect for session validation on mount and cross-tab storage events
   useEffect(() => {
-    const active = authService.getCurrentUser();
-    setUser(active);
-  }, []);
+    validateSession();
+    const handleStorageChange = () => {
+      validateSession();
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [validateSession]);
 
   const getCurrentUser = useCallback(() => {
     return authService.getCurrentUser();
@@ -106,6 +139,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         register,
         getCurrentUser,
+        validateSession,
         updateProfile,
         changePassword,
         switchRole,

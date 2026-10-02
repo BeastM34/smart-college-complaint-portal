@@ -23,38 +23,72 @@ class AuthService {
   }
 
   private initSession(): void {
-    const savedUser = getStorageItem<User | null>(STORAGE_KEYS.SESSION, null);
-    if (savedUser) {
-      const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
-      const liveUser = users.find((u) => u.id === savedUser.id);
-      if (!liveUser || (liveUser.status || 'active') === 'inactive') {
-        this.activeUser = null;
-        removeStorageItem(STORAGE_KEYS.SESSION);
-      } else {
-        this.activeUser = liveUser;
-      }
+    const check = this.validateSession();
+    if (!check.isValid && this.getSessionUser()) {
+      this.invalidateSession();
     } else {
-      this.activeUser = null;
+      this.activeUser = check.user;
     }
   }
 
+  /**
+   * Pure read of the raw session user saved in storage (without validation or mutation).
+   */
+  public getSessionUser(): User | null {
+    return getStorageItem<User | null>(STORAGE_KEYS.SESSION, null);
+  }
+
+  /**
+   * Pure read of user in USERS storage by ID (without validation or mutation).
+   */
+  public getLiveUser(userId?: string): User | null {
+    if (!userId) return null;
+    const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
+    return users.find((u) => u.id === userId) || null;
+  }
+
+  /**
+   * Pure read of current user without modifying storage or authentication state during rendering.
+   */
   public getCurrentUser(): User | null {
-    const savedUser = getStorageItem<User | null>(STORAGE_KEYS.SESSION, null);
+    const savedUser = this.getSessionUser();
     if (!savedUser) {
       this.activeUser = null;
       return null;
     }
+    const liveUser = this.getLiveUser(savedUser.id);
+    return liveUser || savedUser;
+  }
 
-    const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
-    const liveUser = users.find((u) => u.id === savedUser.id);
-    if (!liveUser || (liveUser.status || 'active') === 'inactive') {
-      this.activeUser = null;
-      removeStorageItem(STORAGE_KEYS.SESSION);
-      return null;
+  /**
+   * Validates the active session state without modifying storage.
+   * Returns validation status, live user record (if found), and reason for invalidity.
+   */
+  public validateSession(): {
+    isValid: boolean;
+    user: User | null;
+    reason?: 'none' | 'missing' | 'inactive';
+  } {
+    const savedUser = this.getSessionUser();
+    if (!savedUser) {
+      return { isValid: false, user: null, reason: 'none' };
     }
+    const liveUser = this.getLiveUser(savedUser.id);
+    if (!liveUser) {
+      return { isValid: false, user: null, reason: 'missing' };
+    }
+    if ((liveUser.status || 'active') === 'inactive') {
+      return { isValid: false, user: liveUser, reason: 'inactive' };
+    }
+    return { isValid: true, user: liveUser };
+  }
 
-    this.activeUser = liveUser;
-    return this.activeUser;
+  /**
+   * Explicitly invalidates the session and cleans up storage.
+   */
+  public invalidateSession(): void {
+    this.activeUser = null;
+    removeStorageItem(STORAGE_KEYS.SESSION);
   }
 
   public async login(
@@ -105,8 +139,7 @@ class AuthService {
   }
 
   public async logout(): Promise<void> {
-    this.activeUser = null;
-    removeStorageItem(STORAGE_KEYS.SESSION);
+    this.invalidateSession();
   }
 
   public async register(data: RegisterData): Promise<User> {

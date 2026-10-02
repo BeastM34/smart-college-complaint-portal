@@ -53,42 +53,49 @@ class NotificationService {
       MOCK_NOTIFICATIONS
     );
 
-    // 1. Direct notifications addressed to this user
+    // 1. Direct notifications addressed specifically to this user
     const directNotifs: Notification[] = [];
+    const directBroadcastIds = new Set<string>();
     const seenDirectIds = new Set<string>();
 
     for (const notif of notifications) {
       if (notif.userId === userId && !seenDirectIds.has(notif.id)) {
         seenDirectIds.add(notif.id);
         directNotifs.push(notif);
+        if (notif.broadcastId) {
+          directBroadcastIds.add(notif.broadcastId);
+        }
       }
     }
 
-    // 2. Global broadcast notifications ('all', 'all_students')
-    // Legacy implementations generated both a global broadcast ('all_students') AND individual student copies.
-    // Prevent old duplicate broadcasts from appearing twice by checking if an individual direct notification
-    // already exists for this broadcast, while preserving distinct legitimate notifications and broadcast history.
+    // 2. Global wildcard broadcast notifications ('all', 'all_students')
+    // Identify duplicate copies belonging to the same broadcast using broadcastId relationship.
+    // If a broadcastId is present on a global notification and the student already received
+    // a direct notification for that exact broadcastId, the global duplicate is skipped.
+    // If reliable identification of an old notification is impossible because previous data
+    // does not contain a broadcast identifier, preserve it rather than guessing and deleting it.
     const eligibleGlobalNotifs: Notification[] = [];
+    const seenGlobalBroadcastIds = new Set<string>();
     const seenGlobalIds = new Set<string>();
 
     for (const notif of notifications) {
       if ((notif.userId === 'all' || notif.userId === 'all_students') && !seenGlobalIds.has(notif.id)) {
         seenGlobalIds.add(notif.id);
 
-        // Check if an individual notification already represents this broadcast for this user
-        const hasIndividualCopy = directNotifs.some((direct) => {
-          const sameTitle = direct.title === notif.title;
-          const sameMessage = direct.message === notif.message;
-          const timeDiffMs = Math.abs(
-            new Date(direct.createdAt).getTime() - new Date(notif.createdAt).getTime()
-          );
-          // Dual-write legacy broadcasts share matching content and timestamps
-          return sameTitle && sameMessage && (timeDiffMs < 300000 || isNaN(timeDiffMs));
-        });
-
-        if (!hasIndividualCopy) {
-          eligibleGlobalNotifs.push(notif);
+        if (notif.broadcastId) {
+          // If the student already received an individual direct copy for this broadcast, skip global copy
+          if (directBroadcastIds.has(notif.broadcastId)) {
+            continue;
+          }
+          // Prevent multiple global duplicate entries with the same broadcastId
+          if (seenGlobalBroadcastIds.has(notif.broadcastId)) {
+            continue;
+          }
+          seenGlobalBroadcastIds.add(notif.broadcastId);
         }
+
+        // If no broadcastId is present (legacy data) or no direct copy exists, preserve the notification
+        eligibleGlobalNotifs.push(notif);
       }
     }
 
@@ -169,12 +176,13 @@ class NotificationService {
   }
 
   public async broadcastNotification(
-    data: Omit<Notification, 'id' | 'createdAt' | 'read' | 'userId'>,
+    data: Omit<Notification, 'id' | 'createdAt' | 'read' | 'userId'> & { broadcastId?: string },
     target: 'all' | 'all_students' = 'all_students'
   ): Promise<Notification> {
     return this.createNotification({
       ...data,
       userId: target,
+      broadcastId: data.broadcastId || `bc-${Date.now()}`,
     });
   }
 
@@ -193,6 +201,7 @@ class NotificationService {
     );
     const currentUser = authService.getCurrentUser();
     const timestamp = new Date().toISOString();
+    const broadcastId = `bc-${Date.now()}`;
 
     let targetCount = 0;
     const notificationsToCreate: Omit<Notification, 'id' | 'createdAt' | 'read'>[] = [];
@@ -204,7 +213,7 @@ class NotificationService {
 
       if (activeStudents.length === 0) {
         const failedRecord: BroadcastNotification = {
-          id: `bc-${Date.now()}`,
+          id: broadcastId,
           title: payload.title,
           message: payload.message,
           audience: 'all_students',
@@ -228,49 +237,62 @@ class NotificationService {
           message: payload.message,
           type: payload.priority || 'info',
           category: 'system_notification',
+          broadcastId,
         });
       });
     } else if (payload.audience === 'department') {
-      if (!payload.targetDepartment) {
-        throw new Error('Please select a target department for this broadcast.');
+      const rawDept = payload.targetDepartment;
+      if (!rawDept || !rawDept.trim()) {
+        throw new Error('Please select or specify a target department.');
       }
 
-      const targetDeptNorm = normalizeDepartment(payload.targetDepartment);
-      const deptStudents = users.filter(
-        (u) =>
-          u.role === 'student' &&
-          (u.status || 'active') === 'active' &&
-          u.department &&
-          normalizeDepartment(u.department) === targetDeptNorm
-      );
+      const targetDeptNorm = normalizeDepartment(rawDept);
+      if (!targetDeptNorm) {
+        throw new Error('Please enter a valid target department name.');
+      }
+
+      const deptStudents = users.filter((u) => {
+        if (u.role !== 'student' || (u.status || 'active') !== 'active') {
+          return false;
+        }
+        if (!u.department || !u.department.trim()) {
+          return false;
+        }
+        const studentDeptNorm = normalizeDepartment(u.department);
+        if (!studentDeptNorm) {
+          return false;
+        }
+        return studentDeptNorm === targetDeptNorm;
+      });
 
       // NEVER silently convert to all_students if no students match
       if (deptStudents.length === 0) {
         const failedRecord: BroadcastNotification = {
-          id: `bc-${Date.now()}`,
+          id: broadcastId,
           title: payload.title,
           message: payload.message,
           audience: 'department',
-          targetDepartment: payload.targetDepartment,
+          targetDepartment: rawDept.trim(),
           priority: payload.priority || 'info',
           sentBy: currentUser?.name || 'Administrator',
           sentAt: timestamp,
           recipientCount: 0,
           status: 'failed',
-          failureReason: `No active students found in "${payload.targetDepartment}" department.`,
+          failureReason: `No active students found in "${rawDept.trim()}" department.`,
         };
         setStorageItem(STORAGE_KEYS.BROADCASTS, [failedRecord, ...broadcasts]);
-        throw new Error(`No active students found in "${payload.targetDepartment}" department.`);
+        throw new Error(`No active students found in "${rawDept.trim()}" department.`);
       }
 
       targetCount = deptStudents.length;
       deptStudents.forEach((student) => {
         notificationsToCreate.push({
           userId: student.id,
-          title: `[${payload.targetDepartment}] ${payload.title}`,
+          title: `[${rawDept.trim()}] ${payload.title}`,
           message: payload.message,
           type: payload.priority || 'info',
           category: 'system_notification',
+          broadcastId,
         });
       });
     } else if (payload.audience === 'student') {
@@ -286,7 +308,7 @@ class NotificationService {
 
       if (!targetStudent) {
         const failedRecord: BroadcastNotification = {
-          id: `bc-${Date.now()}`,
+          id: broadcastId,
           title: payload.title,
           message: payload.message,
           audience: 'student',
@@ -305,7 +327,7 @@ class NotificationService {
 
       if ((targetStudent.status || 'active') === 'inactive') {
         const failedRecord: BroadcastNotification = {
-          id: `bc-${Date.now()}`,
+          id: broadcastId,
           title: payload.title,
           message: payload.message,
           audience: 'student',
@@ -329,6 +351,7 @@ class NotificationService {
         message: payload.message,
         type: payload.priority || 'info',
         category: 'admin_message',
+        broadcastId,
       });
     }
 
@@ -339,11 +362,11 @@ class NotificationService {
 
     // Record in broadcast history
     const broadcastRecord: BroadcastNotification = {
-      id: `bc-${Date.now()}`,
+      id: broadcastId,
       title: payload.title,
       message: payload.message,
       audience: payload.audience,
-      targetDepartment: payload.targetDepartment,
+      targetDepartment: payload.targetDepartment?.trim(),
       targetStudentId: payload.targetStudentId,
       targetStudentName: payload.targetStudentName,
       priority: payload.priority || 'info',

@@ -13,20 +13,18 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ requiredRole }) 
   const { user, isAuthenticated, isLoading, logout } = useAuth();
   const location = useLocation();
 
-  // Verify live user status in storage to prevent access by deactivated accounts
-  const liveUser = authService.getCurrentUser();
-  const isDeactivated = Boolean(
-    (user && (user.status || 'active') === 'inactive') ||
-    (liveUser && (liveUser.status || 'active') === 'inactive') ||
-    (user && !authService.isUserActive(user.id))
-  );
+  // Pure read: inspect live user without mutating localStorage or authentication state
+  const liveUser = user ? authService.getLiveUser(user.id) : null;
+  const isDeactivated = Boolean(liveUser && (liveUser.status || 'active') === 'inactive');
+  const isMissingAccount = Boolean(user && !liveUser);
+  const isInvalidSession = !isAuthenticated || !user || isDeactivated || isMissingAccount;
 
   // Invalidate session in an effect rather than during component rendering
   useEffect(() => {
-    if (isDeactivated) {
+    if ((isDeactivated || isMissingAccount) && user) {
       logout();
     }
-  }, [isDeactivated, logout]);
+  }, [isDeactivated, isMissingAccount, user, logout]);
 
   if (isLoading) {
     return (
@@ -40,28 +38,25 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ requiredRole }) 
     );
   }
 
-  // 1. Unauthenticated or deactivated users attempting protected routes should go to /login
-  if (!isAuthenticated || !user || !liveUser || isDeactivated) {
-    if (isDeactivated) {
-      return (
-        <Navigate
-          to="/login"
-          state={{ from: location, deactivated: true }}
-          replace
-        />
-      );
-    }
-    return <Navigate to="/login" state={{ from: location }} replace />;
+  // 1. Unauthenticated, deactivated, or missing users attempting protected routes should go to /login
+  if (isInvalidSession) {
+    return (
+      <Navigate
+        to="/login"
+        state={{ from: location, deactivated: isDeactivated }}
+        replace
+      />
+    );
   }
 
   // 2. Role-based protection:
   // Students attempting /admin/* should be redirected to /student/dashboard
-  if (requiredRole === 'admin' && liveUser.role !== 'admin') {
+  if (requiredRole === 'admin' && liveUser?.role !== 'admin') {
     return <Navigate to="/student/dashboard" replace />;
   }
 
   // Admins attempting /student/* should be redirected to /admin/dashboard
-  if (requiredRole === 'student' && liveUser.role === 'admin') {
+  if (requiredRole === 'student' && liveUser?.role === 'admin') {
     return <Navigate to="/admin/dashboard" replace />;
   }
 
