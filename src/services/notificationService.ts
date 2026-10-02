@@ -14,6 +14,19 @@ export interface SendBroadcastPayload {
 }
 
 /**
+ * Normalizes department names for strict, clean comparison (ignoring case, ampersands, punctuation, and excess spacing).
+ */
+export const normalizeDepartment = (dept?: string): string => {
+  if (!dept) return '';
+  return dept
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+/**
  * Notification Service
  * Manages fetching, marking as read, unread counts, and administrative broadcast notifications.
  */
@@ -39,24 +52,52 @@ class NotificationService {
       STORAGE_KEYS.NOTIFICATIONS,
       MOCK_NOTIFICATIONS
     );
-    const userNotifs = notifications.filter(
-      (n) =>
-        n.userId === userId ||
-        n.userId === 'all' ||
-        n.userId === 'all_students'
-    );
 
-    // Safeguard against duplicate copies of identical announcements
-    const seen = new Set<string>();
-    const deduplicated: Notification[] = [];
-    for (const notif of userNotifs) {
-      const key = `${notif.title}|${notif.message}|${notif.createdAt}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        deduplicated.push(notif);
+    // 1. Direct notifications addressed to this user
+    const directNotifs: Notification[] = [];
+    const seenDirectIds = new Set<string>();
+
+    for (const notif of notifications) {
+      if (notif.userId === userId && !seenDirectIds.has(notif.id)) {
+        seenDirectIds.add(notif.id);
+        directNotifs.push(notif);
       }
     }
-    return deduplicated;
+
+    // 2. Global broadcast notifications ('all', 'all_students')
+    // Legacy implementations generated both a global broadcast ('all_students') AND individual student copies.
+    // Prevent old duplicate broadcasts from appearing twice by checking if an individual direct notification
+    // already exists for this broadcast, while preserving distinct legitimate notifications and broadcast history.
+    const eligibleGlobalNotifs: Notification[] = [];
+    const seenGlobalIds = new Set<string>();
+
+    for (const notif of notifications) {
+      if ((notif.userId === 'all' || notif.userId === 'all_students') && !seenGlobalIds.has(notif.id)) {
+        seenGlobalIds.add(notif.id);
+
+        // Check if an individual notification already represents this broadcast for this user
+        const hasIndividualCopy = directNotifs.some((direct) => {
+          const sameTitle = direct.title === notif.title;
+          const sameMessage = direct.message === notif.message;
+          const timeDiffMs = Math.abs(
+            new Date(direct.createdAt).getTime() - new Date(notif.createdAt).getTime()
+          );
+          // Dual-write legacy broadcasts share matching content and timestamps
+          return sameTitle && sameMessage && (timeDiffMs < 300000 || isNaN(timeDiffMs));
+        });
+
+        if (!hasIndividualCopy) {
+          eligibleGlobalNotifs.push(notif);
+        }
+      }
+    }
+
+    const allUserNotifs = [...directNotifs, ...eligibleGlobalNotifs];
+    allUserNotifs.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+    return allUserNotifs;
   }
 
   public async getUserNotifications(userId: string): Promise<Notification[]> {
@@ -194,13 +235,13 @@ class NotificationService {
         throw new Error('Please select a target department for this broadcast.');
       }
 
-      const targetDept = payload.targetDepartment.toLowerCase().trim();
+      const targetDeptNorm = normalizeDepartment(payload.targetDepartment);
       const deptStudents = users.filter(
         (u) =>
           u.role === 'student' &&
           (u.status || 'active') === 'active' &&
           u.department &&
-          u.department.toLowerCase().includes(targetDept)
+          normalizeDepartment(u.department) === targetDeptNorm
       );
 
       // NEVER silently convert to all_students if no students match

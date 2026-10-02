@@ -31,9 +31,9 @@ export const LoginPage: React.FC = () => {
     }
   }, [location.state]);
 
-  // If already authenticated, redirect to appropriate dashboard
+  // If already authenticated and account is active, redirect to appropriate dashboard
   useEffect(() => {
-    if (isAuthenticated && user) {
+    if (isAuthenticated && user && (user.status || 'active') !== 'inactive') {
       navigate(user.role === 'admin' ? '/admin/dashboard' : '/student/dashboard', { replace: true });
     }
   }, [isAuthenticated, user, navigate]);

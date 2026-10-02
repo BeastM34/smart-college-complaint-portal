@@ -70,13 +70,21 @@ class AuthService {
     const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
     const cleanEmail = (email || '').trim().toLowerCase();
 
+    if (!cleanEmail) {
+      throw new Error('Please enter your college email address.');
+    }
+
+    if (!password || !password.trim()) {
+      throw new Error('Password is required.');
+    }
+
     const matched = users.find((u) => u.email.toLowerCase() === cleanEmail);
 
     if (!matched) {
       throw new Error('No account found with this college email address.');
     }
 
-    if (password && matched.password && matched.password !== password) {
+    if (matched.password && matched.password !== password) {
       throw new Error('Invalid email or password. Please verify your credentials.');
     }
 
@@ -86,12 +94,14 @@ class AuthService {
     }
 
     this.activeUser = matched;
-    if (shouldRemember) {
-      setStorageItem(STORAGE_KEYS.SESSION, matched);
-    } else {
-      setStorageItem(STORAGE_KEYS.SESSION, matched);
-    }
+    setStorageItem(STORAGE_KEYS.SESSION, matched);
     return matched;
+  }
+
+  public isUserActive(userId: string): boolean {
+    const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
+    const matched = users.find((u) => u.id === userId);
+    return matched ? (matched.status || 'active') === 'active' : false;
   }
 
   public async logout(): Promise<void> {

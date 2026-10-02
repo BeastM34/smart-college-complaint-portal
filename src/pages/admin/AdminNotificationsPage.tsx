@@ -32,7 +32,6 @@ import { notificationService } from '@/services/notificationService';
 import { userService } from '@/services/userService';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useToast } from '@/hooks/useToast';
-import { MOCK_DEPARTMENTS } from '@/data/mockData';
 import type { BroadcastNotification, User as UserType } from '@/types';
 
 type AudienceType = 'all_students' | 'department' | 'student';
@@ -46,7 +45,7 @@ export const AdminNotificationsPage: React.FC = () => {
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [audience, setAudience] = useState<AudienceType>('all_students');
-  const [targetDepartment, setTargetDepartment] = useState<string>(MOCK_DEPARTMENTS[0]);
+  const [targetDepartment, setTargetDepartment] = useState<string>('Computer Science & Engineering');
   const [targetStudentId, setTargetStudentId] = useState<string>('');
   const [priority, setPriority] = useState<PriorityType>('info');
   const [sending, setSending] = useState(false);
@@ -81,6 +80,28 @@ export const AdminNotificationsPage: React.FC = () => {
       setLoading(false);
     }
   };
+
+  // Dynamic list of student academic departments
+  const academicDepartments = useMemo(() => {
+    const studentDepts = students
+      .map((s) => s.department?.trim())
+      .filter((d): d is string => Boolean(d));
+
+    const standardDepts = [
+      'Computer Science & Engineering',
+      'Electronics & Communication',
+      'Mechanical Engineering',
+      'Civil & Environmental Engineering',
+      'Electrical & Electronics',
+      'Information Technology',
+      'Biotechnology',
+      'Business Administration',
+      'Data Science & AI',
+      'Chemical Engineering',
+    ];
+
+    return Array.from(new Set([...studentDepts, ...standardDepts])).sort();
+  }, [students]);
 
   const handleSendBroadcast = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -223,7 +244,7 @@ export const AdminNotificationsPage: React.FC = () => {
                       <Select
                         value={targetDepartment}
                         onChange={(e) => setTargetDepartment(e.target.value)}
-                        options={MOCK_DEPARTMENTS.map((dept) => ({
+                        options={academicDepartments.map((dept) => ({
                           value: dept,
                           label: `${dept} Department`,
                         }))}
