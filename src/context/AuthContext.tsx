@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import type { User, Role, RegisterData } from '@/types';
 import { authService } from '@/services/authService';
+import { STORAGE_KEYS } from '@/utils/storage';
 
 interface AuthContextType {
   user: User | null;
@@ -20,28 +21,29 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Initialize synchronously from storage using pure validation check
-  const [user, setUser] = useState<User | null>(() => {
-    const check = authService.validateSession();
-    return check.isValid ? check.user : null;
-  });
-  const [isLoading, setIsLoading] = useState(false);
+  // Session initialization state: loading is true until initial validation completes
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const isCleaningUpRef = useRef(false);
 
   // Centralized session validation process
   const validateSession = useCallback((): boolean => {
+    // 1. Read the saved session
+    // 2. Check whether associated user still exists
+    // 3. Check whether user account is active
+    // 4. Check whether saved role matches user's actual role
     const sessionCheck = authService.validateSession();
+
     if (!sessionCheck.isValid) {
+      // 6. If invalid, clear the invalid session safely
       if (authService.getSessionUser()) {
         authService.invalidateSession();
       }
-      setUser((currentUser) => {
-        if (currentUser !== null) return null;
-        return currentUser;
-      });
+      setUser((currentUser) => (currentUser !== null ? null : currentUser));
       return false;
     }
-    // Synchronize with live storage if updated
+
+    // 5. If valid, restore the authenticated user
     setUser((currentUser) => {
       const nextUser = sessionCheck.user;
       if (!nextUser) return null;
@@ -59,11 +61,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return true;
   }, []);
 
-  // Centralized effect for session validation on mount and cross-tab storage events
+  // Centralized session initialization on mount and storage synchronization
   useEffect(() => {
-    validateSession();
-    const handleStorageChange = () => {
+    try {
       validateSession();
+    } finally {
+      setIsLoading(false);
+    }
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (!e.key || e.key === STORAGE_KEYS.SESSION || e.key === STORAGE_KEYS.USERS) {
+        validateSession();
+      }
     };
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);

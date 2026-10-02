@@ -18,21 +18,22 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ requiredRole }) 
   const liveUser = user ? authService.getLiveUser(user.id) : null;
   const isDeactivated = Boolean(liveUser && (liveUser.status || 'active') === 'inactive');
   const isMissingAccount = Boolean(user && !liveUser);
-  const isInvalidSession = !isAuthenticated || !user || isDeactivated || isMissingAccount;
+  const isRoleMismatch = Boolean(user && liveUser && user.role !== liveUser.role);
+  const isInvalidSession = !isAuthenticated || !user || isDeactivated || isMissingAccount || isRoleMismatch;
 
   // Invalidate session in an effect rather than during component rendering
   useEffect(() => {
-    if ((isDeactivated || isMissingAccount) && user) {
+    if (!isLoading && (isDeactivated || isMissingAccount || isRoleMismatch) && user) {
       if (!isLoggingOutRef.current) {
         isLoggingOutRef.current = true;
         logout().catch(() => {
           isLoggingOutRef.current = false;
         });
       }
-    } else {
+    } else if (!isDeactivated && !isMissingAccount && !isRoleMismatch) {
       isLoggingOutRef.current = false;
     }
-  }, [isDeactivated, isMissingAccount, user, logout]);
+  }, [isLoading, isDeactivated, isMissingAccount, isRoleMismatch, user, logout]);
 
   if (isLoading) {
     return (

@@ -12,22 +12,12 @@ class AuthService {
 
   constructor() {
     this.ensureUsersSeeded();
-    this.initSession();
   }
 
   private ensureUsersSeeded(): void {
     const existing = getStorageItem<User[] | null>(STORAGE_KEYS.USERS, null);
     if (!existing || existing.length === 0) {
       setStorageItem(STORAGE_KEYS.USERS, MOCK_USERS);
-    }
-  }
-
-  private initSession(): void {
-    const check = this.validateSession();
-    if (!check.isValid && this.getSessionUser()) {
-      this.invalidateSession();
-    } else {
-      this.activeUser = check.user;
     }
   }
 
@@ -51,15 +41,8 @@ class AuthService {
    * Pure read of current valid user without modifying storage, internal state, or activeUser.
    */
   public getCurrentUser(): User | null {
-    const savedUser = this.getSessionUser();
-    if (!savedUser) {
-      return null;
-    }
-    const liveUser = this.getLiveUser(savedUser.id);
-    if (!liveUser || (liveUser.status || 'active') === 'inactive') {
-      return null;
-    }
-    return liveUser;
+    const check = this.validateSession();
+    return check.isValid ? check.user : null;
   }
 
   /**
@@ -69,7 +52,7 @@ class AuthService {
   public validateSession(): {
     isValid: boolean;
     user: User | null;
-    reason?: 'none' | 'missing' | 'inactive';
+    reason?: 'none' | 'missing' | 'inactive' | 'role_mismatch';
   } {
     const savedUser = this.getSessionUser();
     if (!savedUser) {
@@ -79,8 +62,11 @@ class AuthService {
     if (!liveUser) {
       return { isValid: false, user: null, reason: 'missing' };
     }
-    if ((liveUser.status || 'active') === 'inactive') {
+    if ((savedUser.status || 'active') === 'inactive' || (liveUser.status || 'active') === 'inactive') {
       return { isValid: false, user: liveUser, reason: 'inactive' };
+    }
+    if (savedUser.role && liveUser.role && savedUser.role !== liveUser.role) {
+      return { isValid: false, user: null, reason: 'role_mismatch' };
     }
     return { isValid: true, user: liveUser };
   }
