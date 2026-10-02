@@ -28,6 +28,10 @@ class NotificationService {
     );
   }
 
+  public async getUserNotifications(userId: string): Promise<Notification[]> {
+    return this.getNotifications(userId);
+  }
+
   public async getUnreadCount(userId: string): Promise<number> {
     const list = await this.getNotifications(userId);
     return list.filter((n) => !n.read).length;

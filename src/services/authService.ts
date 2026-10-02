@@ -38,13 +38,17 @@ class AuthService {
   }
 
   public async login(
-    email: string,
-    password?: string,
+    emailOrCredentials: string | { email: string; password?: string; rememberMe?: boolean },
+    rawPassword?: string,
     rememberMe = true
   ): Promise<User> {
     this.ensureUsersSeeded();
+    const email = typeof emailOrCredentials === 'string' ? emailOrCredentials : emailOrCredentials.email;
+    const password = typeof emailOrCredentials === 'string' ? rawPassword : emailOrCredentials.password;
+    const shouldRemember = typeof emailOrCredentials === 'string' ? rememberMe : (emailOrCredentials.rememberMe ?? true);
+
     const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = (email || '').trim().toLowerCase();
 
     const matched = users.find((u) => u.email.toLowerCase() === cleanEmail);
 

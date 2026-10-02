@@ -19,6 +19,7 @@ export interface User {
   role: Role;
   studentId?: string;
   department?: string;
+  designation?: string;
   year?: string;
   phone?: string;
   bio?: string;
@@ -26,6 +27,17 @@ export interface User {
   preferences?: UserPreferences;
   password?: string; // Stored securely in mock database
   createdAt: string;
+}
+
+export interface StaffMember {
+  id: string;
+  name: string;
+  email: string;
+  role: 'staff';
+  department: string;
+  designation: string;
+  phone?: string;
+  avatarUrl?: string;
 }
 
 export interface RegisterData {
@@ -115,6 +127,7 @@ export interface Complaint {
   attachments?: string[];
   assignedTo?: string;
   assignedStaffName?: string;
+  assignedDepartment?: string;
   estimatedResolutionDate?: string;
   resolvedAt?: string;
   satisfaction?: SatisfactionFeedback;
@@ -214,3 +227,22 @@ export interface StudentActivityEvent extends TimelineEvent {
   ticketNumber: string;
   complaintTitle: string;
 }
+
+export interface AdminKPIStats {
+  total: number;
+  newComplaints: number;
+  pending: number;
+  inProgress: number;
+  resolved: number;
+  critical: number;
+  statusBreakdown: Record<ComplaintStatus, number>;
+  categoryBreakdown: Record<string, number>;
+  priorityBreakdown: Record<Priority, number>;
+  dailyTrends: { date: string; label: string; count: number }[];
+}
+
+export interface AdminActivityEvent extends TimelineEvent {
+  ticketNumber: string;
+  complaintTitle: string;
+}
+
