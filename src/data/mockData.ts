@@ -4,6 +4,7 @@ import type {
   Complaint,
   CategoryItem,
   Notification,
+  BroadcastNotification,
   SystemSettings,
   AnalyticsSummary,
 } from '@/types';
@@ -1216,13 +1217,52 @@ export const MOCK_SETTINGS: SystemSettings = {
   allowStudentRegistration: true,
   emailNotifications: true,
   smsNotifications: false,
+  pushNotifications: true,
+  studentNotifications: true,
   maintenanceMode: false,
   autoAssignComplaints: false,
+  defaultPriority: 'medium',
+  allowReopening: true,
+  allowAnonymousComplaints: false,
   maxAttachmentsPerComplaint: 3,
   maxAttachmentSizeMB: 5,
   supportEmail: 'helpdesk@college.edu',
   supportPhone: '+1 (800) 555-CAMPUS',
 };
+
+export const MOCK_BROADCASTS: BroadcastNotification[] = [
+  {
+    id: 'bc-1',
+    title: 'Scheduled Campus Power Maintenance',
+    message: 'Main power grid will undergo transformer maintenance this Saturday from 02:00 to 06:00. Backup diesel generators will power essential hostel corridors and server rooms.',
+    audience: 'all_students',
+    priority: 'warning',
+    sentBy: 'Campus Administration',
+    sentAt: '2026-09-28T10:00:00Z',
+    recipientCount: 1420,
+  },
+  {
+    id: 'bc-2',
+    title: 'Computer Science Lab Wi-Fi Access Point Upgrades',
+    message: 'New Wi-Fi 6 access points are being configured across CS Block 2nd & 3rd floors. Occasional 5-minute intermittent reconnects may occur during lab sessions.',
+    audience: 'department',
+    targetDepartment: 'Computer Science & Engineering',
+    priority: 'info',
+    sentBy: 'IT Infrastructure Division',
+    sentAt: '2026-09-29T14:30:00Z',
+    recipientCount: 380,
+  },
+  {
+    id: 'bc-3',
+    title: 'Hostel Hot Water Heater Replacement Notice',
+    message: 'Solar heat exchanger pipes in Hostel Block B are being serviced. Expected completion by 18:00 today.',
+    audience: 'all_students',
+    priority: 'info',
+    sentBy: 'Facilities & Sanitation',
+    sentAt: '2026-09-30T09:15:00Z',
+    recipientCount: 650,
+  },
+];
 
 export const MOCK_ANALYTICS: AnalyticsSummary = {
   totalComplaints: 22,

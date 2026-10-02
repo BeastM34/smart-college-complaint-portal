@@ -26,6 +26,7 @@ export interface User {
   avatarUrl?: string;
   preferences?: UserPreferences;
   password?: string; // Stored securely in mock database
+  status?: 'active' | 'inactive';
   createdAt: string;
 }
 
@@ -179,12 +180,31 @@ export interface SystemSettings {
   allowStudentRegistration: boolean;
   emailNotifications: boolean;
   smsNotifications: boolean;
+  pushNotifications: boolean;
+  studentNotifications: boolean;
   maintenanceMode: boolean;
   autoAssignComplaints: boolean;
+  defaultPriority: Priority;
+  allowReopening: boolean;
+  allowAnonymousComplaints: boolean;
   maxAttachmentsPerComplaint: number;
   maxAttachmentSizeMB: number;
   supportEmail: string;
   supportPhone: string;
+}
+
+export interface BroadcastNotification {
+  id: string;
+  title: string;
+  message: string;
+  audience: 'all_students' | 'department' | 'student';
+  targetDepartment?: string;
+  targetStudentId?: string;
+  targetStudentName?: string;
+  priority: 'info' | 'warning' | 'error';
+  sentBy: string;
+  sentAt: string;
+  recipientCount: number;
 }
 
 export interface AnalyticsSummary {

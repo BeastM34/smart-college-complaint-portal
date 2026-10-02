@@ -11,6 +11,7 @@ export const STORAGE_KEYS = {
   SETTINGS: 'scp_settings',
   SESSION: 'scp_session',
   THEME: 'scp_theme',
+  BROADCASTS: 'scp_broadcasts',
 } as const;
 
 export type StorageKey = typeof STORAGE_KEYS[keyof typeof STORAGE_KEYS];
