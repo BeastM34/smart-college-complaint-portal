@@ -11,13 +11,14 @@ export interface SendBroadcastPayload {
   targetStudentId?: string;
   targetStudentName?: string;
   priority?: 'info' | 'warning' | 'error';
+  broadcastId?: string;
 }
 
 /**
  * Normalizes department names for strict, clean comparison (ignoring case, ampersands, punctuation, and excess spacing).
  */
 export const normalizeDepartment = (dept?: string): string => {
-  if (!dept) return '';
+  if (!dept || typeof dept !== 'string') return '';
   return dept
     .toLowerCase()
     .replace(/&/g, 'and')
@@ -60,11 +61,15 @@ class NotificationService {
 
     for (const notif of notifications) {
       if (notif.userId === userId && !seenDirectIds.has(notif.id)) {
-        seenDirectIds.add(notif.id);
-        directNotifs.push(notif);
+        // Prevent duplicate direct copies for the same recipient and broadcast
         if (notif.broadcastId) {
+          if (directBroadcastIds.has(notif.broadcastId)) {
+            continue;
+          }
           directBroadcastIds.add(notif.broadcastId);
         }
+        seenDirectIds.add(notif.id);
+        directNotifs.push(notif);
       }
     }
 
@@ -165,6 +170,17 @@ class NotificationService {
       STORAGE_KEYS.NOTIFICATIONS,
       MOCK_NOTIFICATIONS
     );
+
+    // Before creating a notification, check whether the same recipient already has a notification with the same broadcastId
+    if (data.broadcastId && data.userId) {
+      const existing = notifications.find(
+        (n) => n.broadcastId === data.broadcastId && n.userId === data.userId
+      );
+      if (existing) {
+        return existing;
+      }
+    }
+
     const newNotif: Notification = {
       ...data,
       id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -201,7 +217,7 @@ class NotificationService {
     );
     const currentUser = authService.getCurrentUser();
     const timestamp = new Date().toISOString();
-    const broadcastId = `bc-${Date.now()}`;
+    const broadcastId = payload.broadcastId || `bc-${Date.now()}`;
 
     let targetCount = 0;
     const notificationsToCreate: Omit<Notification, 'id' | 'createdAt' | 'read'>[] = [];

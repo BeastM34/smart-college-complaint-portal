@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import type { User, Role, RegisterData } from '@/types';
 import { authService } from '@/services/authService';
 
@@ -26,30 +26,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return check.isValid ? check.user : null;
   });
   const [isLoading, setIsLoading] = useState(false);
+  const isCleaningUpRef = useRef(false);
 
   // Centralized session validation process
   const validateSession = useCallback((): boolean => {
     const sessionCheck = authService.validateSession();
     if (!sessionCheck.isValid) {
-      if (authService.getSessionUser() || user) {
+      if (authService.getSessionUser()) {
         authService.invalidateSession();
-        setUser(null);
       }
+      setUser((currentUser) => {
+        if (currentUser !== null) return null;
+        return currentUser;
+      });
       return false;
     }
     // Synchronize with live storage if updated
-    if (
-      sessionCheck.user &&
-      (!user ||
-        sessionCheck.user.id !== user.id ||
-        sessionCheck.user.role !== user.role ||
-        sessionCheck.user.status !== user.status ||
-        sessionCheck.user.department !== user.department)
-    ) {
-      setUser(sessionCheck.user);
-    }
+    setUser((currentUser) => {
+      const nextUser = sessionCheck.user;
+      if (!nextUser) return null;
+      if (
+        !currentUser ||
+        nextUser.id !== currentUser.id ||
+        nextUser.role !== currentUser.role ||
+        nextUser.status !== currentUser.status ||
+        nextUser.department !== currentUser.department
+      ) {
+        return nextUser;
+      }
+      return currentUser;
+    });
     return true;
-  }, [user]);
+  }, []);
 
   // Centralized effect for session validation on mount and cross-tab storage events
   useEffect(() => {
@@ -80,15 +88,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const logout = async (): Promise<void> => {
+  const logout = useCallback(async (): Promise<void> => {
+    if (isCleaningUpRef.current) return;
+    isCleaningUpRef.current = true;
     setIsLoading(true);
     try {
       await authService.logout();
       setUser(null);
     } finally {
       setIsLoading(false);
+      isCleaningUpRef.current = false;
     }
-  };
+  }, []);
 
   const register = async (data: RegisterData): Promise<User> => {
     setIsLoading(true);

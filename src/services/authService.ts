@@ -48,16 +48,18 @@ class AuthService {
   }
 
   /**
-   * Pure read of current user without modifying storage or authentication state during rendering.
+   * Pure read of current valid user without modifying storage, internal state, or activeUser.
    */
   public getCurrentUser(): User | null {
     const savedUser = this.getSessionUser();
     if (!savedUser) {
-      this.activeUser = null;
       return null;
     }
     const liveUser = this.getLiveUser(savedUser.id);
-    return liveUser || savedUser;
+    if (!liveUser || (liveUser.status || 'active') === 'inactive') {
+      return null;
+    }
+    return liveUser;
   }
 
   /**

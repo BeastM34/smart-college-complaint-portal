@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { authService } from '@/services/authService';
@@ -12,6 +12,7 @@ export interface ProtectedRouteProps {
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ requiredRole }) => {
   const { user, isAuthenticated, isLoading, logout } = useAuth();
   const location = useLocation();
+  const isLoggingOutRef = useRef(false);
 
   // Pure read: inspect live user without mutating localStorage or authentication state
   const liveUser = user ? authService.getLiveUser(user.id) : null;
@@ -22,7 +23,14 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ requiredRole }) 
   // Invalidate session in an effect rather than during component rendering
   useEffect(() => {
     if ((isDeactivated || isMissingAccount) && user) {
-      logout();
+      if (!isLoggingOutRef.current) {
+        isLoggingOutRef.current = true;
+        logout().catch(() => {
+          isLoggingOutRef.current = false;
+        });
+      }
+    } else {
+      isLoggingOutRef.current = false;
     }
   }, [isDeactivated, isMissingAccount, user, logout]);
 
