@@ -61,7 +61,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(true);
     try {
       const created = await authService.register(data);
-      setUser(created);
+      // Do not log in newly registered student automatically
       return created;
     } finally {
       setIsLoading(false);

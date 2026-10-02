@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Mail, Lock, LogIn, Sparkles, GraduationCap, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Mail, Lock, LogIn, Sparkles, GraduationCap, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter, Input } from '@/components/common';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
@@ -12,11 +12,24 @@ export const LoginPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const { login, user, isAuthenticated } = useAuth();
   const { success, error: toastError } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
+
+  useEffect(() => {
+    if (location.state?.registeredEmail) {
+      setEmail(location.state.registeredEmail);
+    }
+    if (location.state?.registrationSuccess) {
+      setSuccessMessage('Registration successful! Please enter your password to sign in.');
+    }
+    if (location.state?.deactivated) {
+      setErrorMessage('Your session was ended because this account has been deactivated.');
+    }
+  }, [location.state]);
 
   // If already authenticated, redirect to appropriate dashboard
   useEffect(() => {
@@ -139,6 +152,16 @@ export const LoginPage: React.FC = () => {
 
           <form onSubmit={handleLogin}>
             <CardContent className="space-y-4">
+              {successMessage && (
+                <div
+                  role="status"
+                  className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 dark:bg-emerald-950/60 dark:border-emerald-900 dark:text-emerald-200 flex items-start gap-2.5 text-xs animate-in fade-in"
+                >
+                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>{successMessage}</span>
+                </div>
+              )}
+
               {errorMessage && (
                 <div
                   role="alert"

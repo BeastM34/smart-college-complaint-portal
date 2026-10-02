@@ -108,9 +108,17 @@ export const AdminNotificationsPage: React.FC = () => {
         `Broadcast dispatched to ${record.recipientCount} recipient(s).`,
         'Broadcast Sent'
       );
-    } catch (err) {
-      toastError('Failed to dispatch broadcast', 'Error');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to dispatch broadcast';
+      toastError(msg, 'Broadcast Failed');
       console.error(err);
+      // Reload history to display the logged unsuccessful attempt
+      try {
+        const history = await notificationService.getBroadcastHistory();
+        setBroadcastHistory(history);
+      } catch (historyErr) {
+        console.error('Failed to reload history:', historyErr);
+      }
     } finally {
       setSending(false);
     }
@@ -234,7 +242,9 @@ export const AdminNotificationsPage: React.FC = () => {
                         onChange={(e) => setTargetStudentId(e.target.value)}
                         options={students.map((s) => ({
                           value: s.id,
-                          label: `${s.name} (${s.studentId || s.email})`,
+                          label: `${s.name} (${s.studentId || s.email})${
+                            s.status === 'inactive' ? ' — [DEACTIVATED]' : ''
+                          }`,
                         }))}
                       />
                     </div>
@@ -342,17 +352,36 @@ export const AdminNotificationsPage: React.FC = () => {
                           {bc.message}
                         </p>
 
+                        {bc.status === 'failed' && bc.failureReason && (
+                          <div className="p-2 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-[11px] text-rose-700 dark:text-rose-300 flex items-start gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                            <span><strong>Delivery Failed:</strong> {bc.failureReason}</span>
+                          </div>
+                        )}
+
                         <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px]">
+                          {/* Delivery Status Badge */}
+                          {bc.status === 'failed' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 font-semibold border border-rose-200 dark:border-rose-900/40">
+                              <span>Failed (0 Delivered)</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 font-semibold border border-emerald-200 dark:border-emerald-900/40">
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>Delivered ({bc.recipientCount})</span>
+                            </span>
+                          )}
+
                           {/* Audience Badge */}
                           {bc.audience === 'all_students' ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 font-semibold border border-purple-200 dark:border-purple-900/40">
                               <Users className="w-3 h-3" />
-                              <span>All Students ({bc.recipientCount})</span>
+                              <span>All Students</span>
                             </span>
                           ) : bc.audience === 'department' ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 font-semibold border border-blue-200 dark:border-blue-900/40">
                               <Building className="w-3 h-3" />
-                              <span>Dept: {bc.targetDepartment} ({bc.recipientCount})</span>
+                              <span>Dept: {bc.targetDepartment}</span>
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 font-semibold border border-emerald-200 dark:border-emerald-900/40">

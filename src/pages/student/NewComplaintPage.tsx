@@ -36,7 +36,8 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { complaintService } from '@/services/complaintService';
-import type { Priority, ComplaintCategory, Complaint } from '@/types';
+import { categoryService } from '@/services/categoryService';
+import type { Priority, ComplaintCategory, Complaint, CategoryItem } from '@/types';
 
 // Step definitions
 const STEPS = [
@@ -46,18 +47,29 @@ const STEPS = [
   { id: 4, name: 'Review & Submit', icon: CheckCircle2, desc: 'Verify before logging' },
 ];
 
-const CATEGORIES: { value: ComplaintCategory; label: string; icon: string }[] = [
-  { value: 'electrical', label: 'Electrical', icon: '⚡' },
-  { value: 'plumbing', label: 'Plumbing', icon: '🔧' },
-  { value: 'wifi_internet', label: 'Wi-Fi/Internet', icon: '📶' },
-  { value: 'classroom', label: 'Classroom', icon: '🎓' },
-  { value: 'furniture', label: 'Furniture', icon: '🪑' },
-  { value: 'cleanliness', label: 'Cleanliness', icon: '🧹' },
-  { value: 'washroom', label: 'Washroom', icon: '🚿' },
-  { value: 'water_supply', label: 'Water Supply', icon: '💧' },
-  { value: 'security', label: 'Security', icon: '🛡️' },
-  { value: 'other', label: 'Other', icon: '📦' },
-];
+/**
+ * Returns a category icon based on name, icon field, or slug
+ */
+const getCategoryIcon = (cat: CategoryItem): string => {
+  const slug = (cat.slug || '').toLowerCase();
+  const name = (cat.name || '').toLowerCase();
+  if (slug.includes('electric') || name.includes('electric') || name.includes('power')) return '⚡';
+  if (slug.includes('plumb') || name.includes('plumb')) return '🔧';
+  if (slug.includes('wifi') || slug.includes('internet') || name.includes('wifi') || name.includes('internet')) return '📶';
+  if (slug.includes('class') || name.includes('class')) return '🎓';
+  if (slug.includes('furn') || name.includes('furn')) return '🪑';
+  if (slug.includes('clean') || slug.includes('sanitat') || name.includes('clean') || name.includes('hygiene') || name.includes('sanitation')) return '🧹';
+  if (slug.includes('wash') || slug.includes('restroom') || name.includes('washroom') || name.includes('toilet')) return '🚿';
+  if (slug.includes('water') || name.includes('water')) return '💧';
+  if (slug.includes('sec') || name.includes('security')) return '🛡️';
+  if (slug.includes('hostel') || name.includes('hostel') || name.includes('dorm')) return '🏢';
+  if (slug.includes('acad') || name.includes('academic') || name.includes('lab')) return '🔬';
+  if (slug.includes('lib') || name.includes('library')) return '📚';
+  if (slug.includes('cant') || name.includes('canteen') || name.includes('food') || name.includes('mess')) return '🍽️';
+  if (slug.includes('trans') || name.includes('transport') || name.includes('bus')) return '🚌';
+  if (slug.includes('infra') || name.includes('infrastructure')) return '🏗️';
+  return '📦';
+};
 
 const PRIORITIES: { value: Priority; label: string; desc: string; badge: Priority }[] = [
   { value: 'low', label: 'Low', desc: 'Minor inconvenience; no operational halt', badge: 'low' },
@@ -136,6 +148,39 @@ export const NewComplaintPage: React.FC = () => {
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<ComplaintCategory>('electrical');
   const [priority, setPriority] = useState<Priority>('medium');
+
+  // Dynamic Categories from CategoryService
+  const [availableCategories, setAvailableCategories] = useState<CategoryItem[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const [categoryLoadError, setCategoryLoadError] = useState<string | null>(null);
+
+  const loadActiveCategories = async () => {
+    setCategoriesLoading(true);
+    setCategoryLoadError(null);
+    try {
+      const activeCats = await categoryService.getCategories(true);
+      setAvailableCategories(activeCats);
+      if (activeCats.length > 0) {
+        setCategory((prev) => {
+          const exists = activeCats.some(
+            (c) => c.slug === prev || c.name === prev || c.id === prev
+          );
+          return exists ? prev : (activeCats[0].slug || activeCats[0].name);
+        });
+      } else {
+        setCategory('');
+      }
+    } catch (err) {
+      console.error('Failed to load categories', err);
+      setCategoryLoadError('Failed to load complaint categories. Please try refreshing.');
+    } finally {
+      setCategoriesLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    loadActiveCategories();
+  }, []);
 
   // Step 2: Location & Description
   const [building, setBuilding] = useState('Computer Science Block');
@@ -254,6 +299,15 @@ export const NewComplaintPage: React.FC = () => {
 
       if (!category) {
         newErrors.category = 'Please select a complaint category';
+      } else if (
+        availableCategories.length > 0 &&
+        !availableCategories.some(
+          (c) => c.slug === category || c.name === category || c.id === category
+        )
+      ) {
+        newErrors.category = 'The selected category is no longer active. Please choose an active category.';
+      } else if (!categoriesLoading && availableCategories.length === 0) {
+        newErrors.category = 'No active categories are currently available for complaint submission.';
       }
 
       if (!priority) {
@@ -347,7 +401,7 @@ export const NewComplaintPage: React.FC = () => {
 
   const handleResetForm = () => {
     setTitle('');
-    setCategory('electrical');
+    setCategory(availableCategories[0]?.slug || availableCategories[0]?.name || '');
     setPriority('medium');
     setBuilding('Computer Science Block');
     setFloor('2nd Floor');
@@ -593,32 +647,80 @@ export const NewComplaintPage: React.FC = () => {
 
               {/* Category Selector */}
               <div className="space-y-2">
-                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
-                  Category <span className="text-rose-500">*</span>
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                  {CATEGORIES.map((cat) => {
-                    const isSelected = category === cat.value;
-                    return (
-                      <button
-                        type="button"
-                        key={cat.value}
-                        onClick={() => {
-                          setCategory(cat.value);
-                          if (errors.category) setErrors((prev) => ({ ...prev, category: '' }));
-                        }}
-                        className={`flex flex-col items-center justify-center p-3 rounded-xl border text-center transition-all ${
-                          isSelected
-                            ? 'border-indigo-600 bg-indigo-50/70 text-indigo-900 font-semibold shadow-xs dark:bg-indigo-950/60 dark:border-indigo-500 dark:text-indigo-200'
-                            : 'border-slate-200/80 bg-white hover:bg-slate-50 text-slate-700 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800/60'
-                        }`}
-                      >
-                        <span className="text-xl mb-1">{cat.icon}</span>
-                        <span className="text-xs truncate w-full">{cat.label}</span>
-                      </button>
-                    );
-                  })}
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+                    Category <span className="text-rose-500">*</span>
+                  </label>
+                  {!categoriesLoading && availableCategories.length > 0 && (
+                    <span className="text-[11px] text-slate-400">
+                      {availableCategories.length} active categories
+                    </span>
+                  )}
                 </div>
+
+                {categoriesLoading ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className="h-20 rounded-xl bg-slate-100 dark:bg-slate-800 animate-pulse border border-slate-200/60 dark:border-slate-800"
+                      />
+                    ))}
+                  </div>
+                ) : categoryLoadError ? (
+                  <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 flex items-center justify-between gap-2 text-xs text-rose-700 dark:text-rose-300">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+                      <span>{categoryLoadError}</span>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={loadActiveCategories}
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                ) : availableCategories.length === 0 ? (
+                  <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-xs text-amber-800 dark:text-amber-300 text-center">
+                    <AlertTriangle className="w-5 h-5 mx-auto mb-1 text-amber-600" />
+                    <p className="font-semibold">No active categories available</p>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5">
+                      There are currently no active categories configured in the college management portal.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                    {availableCategories.map((cat) => {
+                      const catKey = cat.slug || cat.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+                      const isSelected = category === catKey || category === cat.name;
+                      return (
+                        <button
+                          type="button"
+                          key={cat.id}
+                          onClick={() => {
+                            setCategory(catKey);
+                            if (errors.category) setErrors((prev) => ({ ...prev, category: '' }));
+                          }}
+                          title={cat.description}
+                          className={`flex flex-col items-center justify-center p-3 rounded-xl border text-center transition-all ${
+                            isSelected
+                              ? 'border-indigo-600 bg-indigo-50/70 text-indigo-900 font-semibold shadow-xs dark:bg-indigo-950/60 dark:border-indigo-500 dark:text-indigo-200'
+                              : 'border-slate-200/80 bg-white hover:bg-slate-50 text-slate-700 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800/60'
+                          }`}
+                        >
+                          <span className="text-xl mb-1">{getCategoryIcon(cat)}</span>
+                          <span className="text-xs truncate w-full" title={cat.name}>
+                            {cat.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {errors.category && (
                   <p className="text-xs text-rose-500 mt-1">{errors.category}</p>
                 )}
@@ -1032,7 +1134,10 @@ export const NewComplaintPage: React.FC = () => {
                   </h3>
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     <Badge variant="default" size="sm">
-                      Category: {CATEGORIES.find((c) => c.value === category)?.label || category}
+                      Category:{' '}
+                      {availableCategories.find(
+                        (c) => c.slug === category || c.name === category || c.id === category
+                      )?.name || category}
                     </Badge>
                     <Badge variant={priority} size="sm">
                       Priority: {priority.toUpperCase()}

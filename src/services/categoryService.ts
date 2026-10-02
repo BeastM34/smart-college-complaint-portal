@@ -27,11 +27,16 @@ class CategoryService {
     });
 
     const enriched = categories.map((cat) => {
-      const liveCount =
-        countMap[cat.slug.toLowerCase()] ??
-        countMap[cat.name.toLowerCase()] ??
-        cat.complaintCount ??
-        0;
+      const slugKey = cat.slug.toLowerCase().trim();
+      const nameKey = cat.name.toLowerCase().trim();
+      const idKey = cat.id.toLowerCase().trim();
+
+      // Look up complaints referencing either the slug, name, or id
+      let liveCount = 0;
+      if (countMap[slugKey]) liveCount += countMap[slugKey];
+      if (countMap[nameKey] && nameKey !== slugKey) liveCount += countMap[nameKey];
+      if (countMap[idKey] && idKey !== slugKey && idKey !== nameKey) liveCount += countMap[idKey];
+
       return {
         ...cat,
         complaintCount: liveCount,
@@ -52,11 +57,30 @@ class CategoryService {
   public async createCategory(data: Omit<CategoryItem, 'id'>): Promise<CategoryItem> {
     this.ensureInitialized();
     const categories = getStorageItem<CategoryItem[]>(STORAGE_KEYS.CATEGORIES, MOCK_CATEGORIES);
-    const slug = data.slug || data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+    const cleanName = data.name.trim();
+    if (!cleanName) {
+      throw new Error('Category name is required.');
+    }
+
+    const slug = (
+      data.slug || cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    ).toLowerCase().trim();
+
+    // Prevent duplicate category names
+    if (categories.some((c) => c.name.toLowerCase().trim() === cleanName.toLowerCase())) {
+      throw new Error(`A category with the name "${cleanName}" already exists.`);
+    }
+
+    // Prevent duplicate category slugs
+    if (categories.some((c) => c.slug.toLowerCase().trim() === slug)) {
+      throw new Error(`A category with the slug "${slug}" already exists.`);
+    }
 
     const newCategory: CategoryItem = {
       ...data,
       id: `cat-${Date.now()}`,
+      name: cleanName,
       slug,
       complaintCount: 0,
       active: data.active ?? true,
@@ -75,10 +99,44 @@ class CategoryService {
       throw new Error(`Category with ID ${id} not found`);
     }
 
+    const current = categories[index];
+
+    // Prevent duplicate category name if name changed
+    if (data.name) {
+      const cleanName = data.name.trim();
+      if (!cleanName) {
+        throw new Error('Category name cannot be empty.');
+      }
+      if (
+        categories.some(
+          (c) => c.id !== current.id && c.name.toLowerCase().trim() === cleanName.toLowerCase()
+        )
+      ) {
+        throw new Error(`A category with the name "${cleanName}" already exists.`);
+      }
+    }
+
+    // Prevent duplicate category slug if slug explicitly changed
+    if (data.slug) {
+      const cleanSlug = data.slug.toLowerCase().trim();
+      if (
+        categories.some(
+          (c) => c.id !== current.id && c.slug.toLowerCase().trim() === cleanSlug
+        )
+      ) {
+        throw new Error(`A category with the slug "${cleanSlug}" already exists.`);
+      }
+    }
+
+    // Preserve existing slug unless a valid new slug is explicitly supplied.
+    // This preserves identity and prevents breaking historical complaint records.
+    const finalSlug = data.slug ? data.slug.toLowerCase().trim() : current.slug;
+
     const updated: CategoryItem = {
-      ...categories[index],
+      ...current,
       ...data,
-      slug: data.slug || (data.name ? data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') : categories[index].slug),
+      name: data.name ? data.name.trim() : current.name,
+      slug: finalSlug,
     };
 
     categories[index] = updated;

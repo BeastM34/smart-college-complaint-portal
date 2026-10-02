@@ -39,12 +39,24 @@ class NotificationService {
       STORAGE_KEYS.NOTIFICATIONS,
       MOCK_NOTIFICATIONS
     );
-    return notifications.filter(
+    const userNotifs = notifications.filter(
       (n) =>
         n.userId === userId ||
         n.userId === 'all' ||
         n.userId === 'all_students'
     );
+
+    // Safeguard against duplicate copies of identical announcements
+    const seen = new Set<string>();
+    const deduplicated: Notification[] = [];
+    for (const notif of userNotifs) {
+      const key = `${notif.title}|${notif.message}|${notif.createdAt}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduplicated.push(notif);
+      }
+    }
+    return deduplicated;
   }
 
   public async getUserNotifications(userId: string): Promise<Notification[]> {
@@ -126,7 +138,8 @@ class NotificationService {
   }
 
   /**
-   * Send an administrative broadcast notification with specific audience targeting
+   * Send an administrative broadcast notification with specific audience targeting.
+   * Enforces recipient validation, eliminates duplicates, and records delivery status.
    */
   public async sendBroadcastNotification(
     payload: SendBroadcastPayload
@@ -144,36 +157,72 @@ class NotificationService {
     const notificationsToCreate: Omit<Notification, 'id' | 'createdAt' | 'read'>[] = [];
 
     if (payload.audience === 'all_students') {
-      const students = users.filter((u) => u.role === 'student');
-      targetCount = students.length || 1;
-      // Global broadcast notification
-      notificationsToCreate.push({
-        userId: 'all_students',
-        title: payload.title,
-        message: payload.message,
-        type: payload.priority || 'info',
-        category: 'system_notification',
-      });
-      // Also ensure direct individual dispatch for all active students
-      students.forEach((s) => {
+      const activeStudents = users.filter(
+        (u) => u.role === 'student' && (u.status || 'active') === 'active'
+      );
+
+      if (activeStudents.length === 0) {
+        const failedRecord: BroadcastNotification = {
+          id: `bc-${Date.now()}`,
+          title: payload.title,
+          message: payload.message,
+          audience: 'all_students',
+          priority: payload.priority || 'info',
+          sentBy: currentUser?.name || 'Administrator',
+          sentAt: timestamp,
+          recipientCount: 0,
+          status: 'failed',
+          failureReason: 'No active student accounts found to receive this broadcast.',
+        };
+        setStorageItem(STORAGE_KEYS.BROADCASTS, [failedRecord, ...broadcasts]);
+        throw new Error('No active student accounts found to receive this broadcast.');
+      }
+
+      targetCount = activeStudents.length;
+      // Dispatch exactly one individual notification per active student (no separate global copy)
+      activeStudents.forEach((student) => {
         notificationsToCreate.push({
-          userId: s.id,
+          userId: student.id,
           title: payload.title,
           message: payload.message,
           type: payload.priority || 'info',
           category: 'system_notification',
         });
       });
-    } else if (payload.audience === 'department' && payload.targetDepartment) {
+    } else if (payload.audience === 'department') {
+      if (!payload.targetDepartment) {
+        throw new Error('Please select a target department for this broadcast.');
+      }
+
       const targetDept = payload.targetDepartment.toLowerCase().trim();
       const deptStudents = users.filter(
         (u) =>
           u.role === 'student' &&
+          (u.status || 'active') === 'active' &&
           u.department &&
           u.department.toLowerCase().includes(targetDept)
       );
-      targetCount = deptStudents.length;
 
+      // NEVER silently convert to all_students if no students match
+      if (deptStudents.length === 0) {
+        const failedRecord: BroadcastNotification = {
+          id: `bc-${Date.now()}`,
+          title: payload.title,
+          message: payload.message,
+          audience: 'department',
+          targetDepartment: payload.targetDepartment,
+          priority: payload.priority || 'info',
+          sentBy: currentUser?.name || 'Administrator',
+          sentAt: timestamp,
+          recipientCount: 0,
+          status: 'failed',
+          failureReason: `No active students found in "${payload.targetDepartment}" department.`,
+        };
+        setStorageItem(STORAGE_KEYS.BROADCASTS, [failedRecord, ...broadcasts]);
+        throw new Error(`No active students found in "${payload.targetDepartment}" department.`);
+      }
+
+      targetCount = deptStudents.length;
       deptStudents.forEach((student) => {
         notificationsToCreate.push({
           userId: student.id,
@@ -183,22 +232,58 @@ class NotificationService {
           category: 'system_notification',
         });
       });
-
-      // If no specific users matched, still create a tagged broadcast
-      if (targetCount === 0) {
-        notificationsToCreate.push({
-          userId: 'all_students',
-          title: `[${payload.targetDepartment}] ${payload.title}`,
-          message: payload.message,
-          type: payload.priority || 'info',
-          category: 'system_notification',
-        });
-        targetCount = 1;
+    } else if (payload.audience === 'student') {
+      if (!payload.targetStudentId) {
+        throw new Error('Please select a student recipient.');
       }
-    } else if (payload.audience === 'student' && payload.targetStudentId) {
+
+      const targetStudent = users.find(
+        (u) =>
+          (u.id === payload.targetStudentId || u.studentId === payload.targetStudentId) &&
+          u.role === 'student'
+      );
+
+      if (!targetStudent) {
+        const failedRecord: BroadcastNotification = {
+          id: `bc-${Date.now()}`,
+          title: payload.title,
+          message: payload.message,
+          audience: 'student',
+          targetStudentId: payload.targetStudentId,
+          targetStudentName: payload.targetStudentName,
+          priority: payload.priority || 'info',
+          sentBy: currentUser?.name || 'Administrator',
+          sentAt: timestamp,
+          recipientCount: 0,
+          status: 'failed',
+          failureReason: 'Recipient student account could not be found.',
+        };
+        setStorageItem(STORAGE_KEYS.BROADCASTS, [failedRecord, ...broadcasts]);
+        throw new Error('Selected student account could not be found.');
+      }
+
+      if ((targetStudent.status || 'active') === 'inactive') {
+        const failedRecord: BroadcastNotification = {
+          id: `bc-${Date.now()}`,
+          title: payload.title,
+          message: payload.message,
+          audience: 'student',
+          targetStudentId: payload.targetStudentId,
+          targetStudentName: targetStudent.name,
+          priority: payload.priority || 'info',
+          sentBy: currentUser?.name || 'Administrator',
+          sentAt: timestamp,
+          recipientCount: 0,
+          status: 'failed',
+          failureReason: `Student account for ${targetStudent.name} is deactivated.`,
+        };
+        setStorageItem(STORAGE_KEYS.BROADCASTS, [failedRecord, ...broadcasts]);
+        throw new Error(`Cannot send notification: ${targetStudent.name}'s account is deactivated.`);
+      }
+
       targetCount = 1;
       notificationsToCreate.push({
-        userId: payload.targetStudentId,
+        userId: targetStudent.id,
         title: payload.title,
         message: payload.message,
         type: payload.priority || 'info',
@@ -224,6 +309,7 @@ class NotificationService {
       sentBy: currentUser?.name || 'Administrator',
       sentAt: timestamp,
       recipientCount: targetCount,
+      status: 'delivered',
     };
 
     setStorageItem(STORAGE_KEYS.BROADCASTS, [broadcastRecord, ...broadcasts]);

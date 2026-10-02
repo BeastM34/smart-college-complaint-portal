@@ -1,6 +1,7 @@
 import type { User, Role } from '@/types';
-import { STORAGE_KEYS, getStorageItem, setStorageItem } from '@/utils/storage';
+import { STORAGE_KEYS, getStorageItem, setStorageItem, removeStorageItem } from '@/utils/storage';
 import { MOCK_USERS } from '@/data/mockData';
+import { authService } from './authService';
 
 export interface UserFilterOptions {
   search?: string;
@@ -82,11 +83,30 @@ class UserService {
       throw new Error(`User with ID ${id} not found`);
     }
 
-    const currentStatus = users[index].status || 'active';
+    const targetUser = users[index];
+    const currentStatus = targetUser.status || 'active';
     const nextStatus = currentStatus === 'active' ? 'inactive' : 'active';
 
+    if (nextStatus === 'inactive') {
+      // 1. Prevent admin from deactivating their own account
+      const currentUser = authService.getCurrentUser();
+      if (currentUser && currentUser.id === id && currentUser.role === 'admin') {
+        throw new Error('You cannot deactivate your own account.');
+      }
+
+      // 2. Prevent deactivating the last active administrator
+      if (targetUser.role === 'admin') {
+        const activeAdmins = users.filter(
+          (u) => u.role === 'admin' && (u.status || 'active') === 'active'
+        );
+        if (activeAdmins.length <= 1) {
+          throw new Error('Cannot deactivate the only remaining active administrator.');
+        }
+      }
+    }
+
     const updatedUser: User = {
-      ...users[index],
+      ...targetUser,
       status: nextStatus,
     };
 
@@ -96,7 +116,11 @@ class UserService {
     // If active session belongs to this user, update session as well
     const session = getStorageItem<User | null>(STORAGE_KEYS.SESSION, null);
     if (session && session.id === id) {
-      setStorageItem(STORAGE_KEYS.SESSION, updatedUser);
+      if (nextStatus === 'inactive') {
+        removeStorageItem(STORAGE_KEYS.SESSION);
+      } else {
+        setStorageItem(STORAGE_KEYS.SESSION, updatedUser);
+      }
     }
 
     return updatedUser;
@@ -111,8 +135,25 @@ class UserService {
       throw new Error(`User with ID ${id} not found`);
     }
 
+    const targetUser = users[index];
+
+    // Safeguards for demoting an administrator
+    if (targetUser.role === 'admin' && role !== 'admin') {
+      const currentUser = authService.getCurrentUser();
+      if (currentUser && currentUser.id === id) {
+        throw new Error('You cannot remove your own administrator privileges.');
+      }
+
+      const activeAdmins = users.filter(
+        (u) => u.role === 'admin' && (u.status || 'active') === 'active'
+      );
+      if (activeAdmins.length <= 1) {
+        throw new Error('Cannot change the role of the only remaining active administrator.');
+      }
+    }
+
     const updatedUser: User = {
-      ...users[index],
+      ...targetUser,
       role,
     };
 

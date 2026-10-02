@@ -25,7 +25,14 @@ class AuthService {
   private initSession(): void {
     const savedUser = getStorageItem<User | null>(STORAGE_KEYS.SESSION, null);
     if (savedUser) {
-      this.activeUser = savedUser;
+      const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
+      const liveUser = users.find((u) => u.id === savedUser.id);
+      if (!liveUser || (liveUser.status || 'active') === 'inactive') {
+        this.activeUser = null;
+        removeStorageItem(STORAGE_KEYS.SESSION);
+      } else {
+        this.activeUser = liveUser;
+      }
     } else {
       this.activeUser = null;
     }
@@ -33,7 +40,20 @@ class AuthService {
 
   public getCurrentUser(): User | null {
     const savedUser = getStorageItem<User | null>(STORAGE_KEYS.SESSION, null);
-    this.activeUser = savedUser;
+    if (!savedUser) {
+      this.activeUser = null;
+      return null;
+    }
+
+    const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
+    const liveUser = users.find((u) => u.id === savedUser.id);
+    if (!liveUser || (liveUser.status || 'active') === 'inactive') {
+      this.activeUser = null;
+      removeStorageItem(STORAGE_KEYS.SESSION);
+      return null;
+    }
+
+    this.activeUser = liveUser;
     return this.activeUser;
   }
 
@@ -60,8 +80,13 @@ class AuthService {
       throw new Error('Invalid email or password. Please verify your credentials.');
     }
 
+    // Check account status: Inactive accounts are blocked from logging in
+    if ((matched.status || 'active') === 'inactive') {
+      throw new Error('Your account has been deactivated. Please contact an administrator.');
+    }
+
     this.activeUser = matched;
-    if (rememberMe) {
+    if (shouldRemember) {
       setStorageItem(STORAGE_KEYS.SESSION, matched);
     } else {
       setStorageItem(STORAGE_KEYS.SESSION, matched);
@@ -77,7 +102,17 @@ class AuthService {
   public async register(data: RegisterData): Promise<User> {
     this.ensureUsersSeeded();
     const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
+
+    // Validate required fields
+    if (!data.name?.trim()) throw new Error('Full name is required.');
+    if (!data.email?.trim()) throw new Error('College email is required.');
+    if (!data.studentId?.trim()) throw new Error('Student ID / Roll number is required.');
+    if (!data.department?.trim()) throw new Error('Department is required.');
+    if (!data.phone?.trim()) throw new Error('Phone contact is required.');
+    if (!data.password) throw new Error('Password is required.');
+
     const cleanEmail = data.email.trim().toLowerCase();
+    const cleanStudentId = data.studentId.trim().toLowerCase();
 
     // Check duplicate email
     if (users.some((u) => u.email.toLowerCase() === cleanEmail)) {
@@ -85,7 +120,7 @@ class AuthService {
     }
 
     // Check duplicate student ID
-    if (data.studentId && users.some((u) => u.studentId?.toLowerCase() === data.studentId.trim().toLowerCase())) {
+    if (users.some((u) => u.studentId && u.studentId.toLowerCase() === cleanStudentId)) {
       throw new Error('A student profile with this Student ID is already registered.');
     }
 
@@ -97,18 +132,16 @@ class AuthService {
       role: 'student', // Enforce student role
       studentId: data.studentId.trim(),
       department: data.department.trim(),
-      year: data.year,
+      year: data.year || '1st Year',
       phone: data.phone.trim(),
+      status: 'active',
       createdAt: new Date().toISOString(),
     };
 
     const updatedUsers = [...users, newUser];
     setStorageItem(STORAGE_KEYS.USERS, updatedUsers);
 
-    // Automatically set as active session
-    this.activeUser = newUser;
-    setStorageItem(STORAGE_KEYS.SESSION, newUser);
-
+    // DO NOT set activeUser or session: student must manually sign in
     return newUser;
   }
 

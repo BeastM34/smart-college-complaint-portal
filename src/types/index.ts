@@ -205,6 +205,8 @@ export interface BroadcastNotification {
   sentBy: string;
   sentAt: string;
   recipientCount: number;
+  status?: 'delivered' | 'failed';
+  failureReason?: string;
 }
 
 export interface AnalyticsSummary {

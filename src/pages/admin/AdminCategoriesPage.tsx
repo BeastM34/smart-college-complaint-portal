@@ -99,8 +99,9 @@ export const AdminCategoriesPage: React.FC = () => {
       setAddDesc('');
       setAddSla('24');
       success(`Category "${created.name}" created successfully.`, 'Category Added');
-    } catch (err) {
-      toastError('Failed to create category', 'Error');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to create category';
+      toastError(msg, 'Error');
       console.error(err);
     } finally {
       setIsSubmittingAdd(false);
@@ -131,8 +132,9 @@ export const AdminCategoriesPage: React.FC = () => {
       setCategories((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
       setEditingCategory(null);
       success(`Category "${updated.name}" updated successfully.`, 'Category Modified');
-    } catch (err) {
-      toastError('Failed to update category', 'Error');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to update category';
+      toastError(msg, 'Error');
       console.error(err);
     } finally {
       setIsSubmittingEdit(false);

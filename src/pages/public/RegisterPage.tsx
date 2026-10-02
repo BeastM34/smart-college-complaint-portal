@@ -116,8 +116,17 @@ export const RegisterPage: React.FC = () => {
         termsAccepted,
       });
 
-      success(`Welcome to SmartCampus, ${newUser.name}!`, 'Account Created');
-      navigate('/student/dashboard', { replace: true });
+      success(
+        `Account created successfully for ${newUser.name}. Please sign in with your credentials.`,
+        'Registration Complete'
+      );
+      navigate('/login', {
+        replace: true,
+        state: {
+          registeredEmail: newUser.email,
+          registrationSuccess: true,
+        },
+      });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Registration failed. Please try again.';
       setGeneralError(msg);

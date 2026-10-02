@@ -30,14 +30,21 @@ import {
   SkeletonLoader,
 } from '@/components/common';
 import { userService } from '@/services/userService';
+import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import type { User, Role } from '@/types';
 
 export const AdminUsersPage: React.FC = () => {
+  const { user: currentUser } = useAuth();
   const { success, error: toastError } = useToast();
 
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Active admin count to safeguard against locking out admin access
+  const activeAdminCount = useMemo(() => {
+    return users.filter((u) => u.role === 'admin' && (u.status || 'active') === 'active').length;
+  }, [users]);
 
   // Filters
   const [search, setSearch] = useState('');
@@ -146,8 +153,9 @@ export const AdminUsersPage: React.FC = () => {
         `${updated.name}'s role updated to ${newRole.toUpperCase()}`,
         'Role Updated'
       );
-    } catch (err) {
-      toastError('Failed to change user role', 'Error');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to change user role';
+      toastError(msg, 'Action Blocked');
       console.error(err);
     } finally {
       setIsUpdatingRole(false);
@@ -168,8 +176,9 @@ export const AdminUsersPage: React.FC = () => {
         `${updated.name} has been ${nextStatus === 'active' ? 'activated' : 'deactivated'}.`,
         'Status Changed'
       );
-    } catch (err) {
-      toastError('Failed to change user status', 'Error');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to change user status';
+      toastError(msg, 'Action Blocked');
       console.error(err);
     } finally {
       setIsTogglingStatus(false);
@@ -337,9 +346,16 @@ export const AdminUsersPage: React.FC = () => {
                               name={u.name}
                             />
                             <div>
-                              <p className="font-bold text-slate-900 dark:text-slate-100">
-                                {u.name}
-                              </p>
+                              <div className="flex items-center gap-1.5">
+                                <p className="font-bold text-slate-900 dark:text-slate-100">
+                                  {u.name}
+                                </p>
+                                {currentUser?.id === u.id && (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-900/40">
+                                    You
+                                  </span>
+                                )}
+                              </div>
                               {u.phone && (
                                 <p className="text-[10px] text-slate-400">{u.phone}</p>
                               )}
@@ -425,9 +441,20 @@ export const AdminUsersPage: React.FC = () => {
                             <Button
                               variant="ghost"
                               size="sm"
+                              disabled={
+                                (currentUser?.id === u.id && isActive) ||
+                                (u.role === 'admin' && isActive && activeAdminCount <= 1)
+                              }
+                              title={
+                                currentUser?.id === u.id && isActive
+                                  ? 'You cannot deactivate your own account'
+                                  : u.role === 'admin' && isActive && activeAdminCount <= 1
+                                  ? 'Cannot deactivate the last active administrator'
+                                  : undefined
+                              }
                               className={`h-7 text-xs ${
                                 isActive
-                                  ? 'text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40'
+                                  ? 'text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 disabled:opacity-40 disabled:cursor-not-allowed'
                                   : 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
                               }`}
                               onClick={() => setStatusModalUser(u)}
@@ -514,6 +541,21 @@ export const AdminUsersPage: React.FC = () => {
             />
           </div>
 
+          {/* Role Demotion Safeguard Warning */}
+          {roleModalUser?.role === 'admin' && newRole !== 'admin' && (
+            currentUser?.id === roleModalUser.id ? (
+              <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-amber-800 dark:text-amber-200 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+                <span>You cannot remove your own administrator privileges.</span>
+              </div>
+            ) : activeAdminCount <= 1 ? (
+              <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-800 dark:text-rose-200 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>Cannot demote the only remaining active administrator.</span>
+              </div>
+            ) : null
+          )}
+
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
             <Button
               type="button"
@@ -527,6 +569,11 @@ export const AdminUsersPage: React.FC = () => {
               type="submit"
               variant="primary"
               size="sm"
+              disabled={
+                roleModalUser?.role === 'admin' &&
+                newRole !== 'admin' &&
+                (currentUser?.id === roleModalUser.id || activeAdminCount <= 1)
+              }
               isLoading={isUpdatingRole}
               className="bg-indigo-600 hover:bg-indigo-700 text-white"
             >
@@ -565,6 +612,21 @@ export const AdminUsersPage: React.FC = () => {
             )}
           </p>
 
+          {/* Self-Deactivation or Last-Admin Warning */}
+          {(statusModalUser?.status || 'active') === 'active' && (
+            currentUser?.id === statusModalUser?.id ? (
+              <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-amber-800 dark:text-amber-200 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+                <span>You cannot deactivate your own account.</span>
+              </div>
+            ) : statusModalUser?.role === 'admin' && activeAdminCount <= 1 ? (
+              <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-800 dark:text-rose-200 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>Cannot deactivate the only remaining active administrator.</span>
+              </div>
+            ) : null
+          )}
+
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
             <Button
               type="button"
@@ -580,6 +642,11 @@ export const AdminUsersPage: React.FC = () => {
                 (statusModalUser?.status || 'active') === 'active' ? 'danger' : 'primary'
               }
               size="sm"
+              disabled={
+                (statusModalUser?.status || 'active') === 'active' &&
+                (currentUser?.id === statusModalUser?.id ||
+                  (statusModalUser?.role === 'admin' && activeAdminCount <= 1))
+              }
               isLoading={isTogglingStatus}
               onClick={handleToggleStatus}
             >
