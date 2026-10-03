@@ -1,6 +1,7 @@
 import type { CategoryItem, Complaint } from '@/types';
 import { STORAGE_KEYS, getStorageItem, setStorageItem } from '@/utils/storage';
 import { MOCK_CATEGORIES, MOCK_COMPLAINTS } from '@/data/mockData';
+import { authService } from './authService';
 
 /**
  * Category Service
@@ -56,6 +57,10 @@ class CategoryService {
 
   public async createCategory(data: Omit<CategoryItem, 'id'>): Promise<CategoryItem> {
     this.ensureInitialized();
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Unauthorized: Only administrators are permitted to create categories.');
+    }
     const categories = getStorageItem<CategoryItem[]>(STORAGE_KEYS.CATEGORIES, MOCK_CATEGORIES);
 
     const cleanName = data.name.trim();
@@ -92,6 +97,11 @@ class CategoryService {
 
   public async updateCategory(id: string, data: Partial<CategoryItem>): Promise<CategoryItem> {
     this.ensureInitialized();
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Unauthorized: Only administrators are permitted to update categories.');
+    }
+
     const categories = getStorageItem<CategoryItem[]>(STORAGE_KEYS.CATEGORIES, MOCK_CATEGORIES);
     const index = categories.findIndex((c) => c.id === id || c.slug === id);
 
@@ -146,6 +156,11 @@ class CategoryService {
 
   public async toggleCategoryStatus(id: string): Promise<CategoryItem> {
     this.ensureInitialized();
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Unauthorized: Only administrators are permitted to change category status.');
+    }
+
     const categories = getStorageItem<CategoryItem[]>(STORAGE_KEYS.CATEGORIES, MOCK_CATEGORIES);
     const index = categories.findIndex((c) => c.id === id || c.slug === id);
 

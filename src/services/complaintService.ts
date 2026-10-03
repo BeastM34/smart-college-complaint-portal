@@ -315,6 +315,16 @@ class ComplaintService {
   public async getComplaints(filter?: FilterOptions): Promise<Complaint[]> {
     this.ensureInitialized();
     let complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    const currentUser = authService.getCurrentUser();
+
+    // Redact internal notes if caller is not an administrator
+    if (currentUser?.role !== 'admin') {
+      complaints = complaints.map((c) => ({
+        ...c,
+        timeline: Array.isArray(c.timeline) ? c.timeline.filter((t) => !t.isInternal) : [],
+        comments: Array.isArray(c.comments) ? c.comments.filter((cm) => !cm.isInternal) : [],
+      }));
+    }
 
     if (!filter) return complaints;
 
@@ -351,7 +361,9 @@ class ComplaintService {
     if (!item) return null;
 
     const currentUser = authService.getCurrentUser();
-    const shouldFilter = filterInternal && currentUser?.role !== 'admin';
+    // Non-admins (students, staff, unauthenticated) can NEVER view internal timeline events or comments
+    const isCallerAdmin = currentUser?.role === 'admin';
+    const shouldFilter = !isCallerAdmin || filterInternal;
 
     if (shouldFilter) {
       return {
@@ -369,6 +381,18 @@ class ComplaintService {
     const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
     return complaints
       .filter((c) => c.studentId === studentIdOrEmail || c.studentEmail === studentIdOrEmail)
+      .map((c) => ({
+        ...c,
+        timeline: c.timeline.filter((t) => !t.isInternal),
+        comments: c.comments?.filter((cm) => !cm.isInternal),
+      }));
+  }
+
+  public async getStaffComplaints(staffIdOrEmail: string): Promise<Complaint[]> {
+    this.ensureInitialized();
+    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    return complaints
+      .filter((c) => c.assignedTo === staffIdOrEmail || c.assignedStaffName === staffIdOrEmail)
       .map((c) => ({
         ...c,
         timeline: c.timeline.filter((t) => !t.isInternal),
@@ -572,8 +596,34 @@ class ComplaintService {
       throw new Error(`Complaint with ID ${id} not found`);
     }
 
-    const timestamp = new Date().toISOString();
+    if (!currentUser) {
+      throw new Error('Unauthorized: An authenticated session is required to update complaint status.');
+    }
+
     const complaint = complaints[index];
+
+    // Students cannot update complaint status directly
+    if (currentUser.role === 'student') {
+      throw new Error(
+        'Unauthorized: Students are not permitted to directly modify complaint statuses. Use reopenComplaint if eligible.'
+      );
+    }
+
+    // Staff can only update complaints assigned to them and cannot create internal notes
+    if (currentUser.role === 'staff') {
+      if (complaint.assignedTo !== currentUser.id) {
+        throw new Error(
+          'Unauthorized: Staff members can only update complaints assigned directly to them.'
+        );
+      }
+      if (isInternal) {
+        throw new Error(
+          'Unauthorized: Only administrators are permitted to create internal status updates.'
+        );
+      }
+    }
+
+    const timestamp = new Date().toISOString();
 
     const newEvent: TimelineEvent = {
       id: `tl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -640,8 +690,12 @@ class ComplaintService {
     notifyStudent: boolean = true
   ): Promise<Complaint> {
     this.ensureInitialized();
-    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
     const currentUser = authService.getCurrentUser();
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Unauthorized: Only administrators are permitted to assign complaints.');
+    }
+
+    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
     const index = complaints.findIndex((c) => c.id === id || c.ticketNumber === id);
 
     if (index === -1) {
@@ -708,8 +762,12 @@ class ComplaintService {
     notifyStudent: boolean = false
   ): Promise<Complaint> {
     this.ensureInitialized();
-    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
     const currentUser = authService.getCurrentUser();
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Unauthorized: Only administrators are permitted to update complaint priorities.');
+    }
+
+    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
     const index = complaints.findIndex((c) => c.id === id || c.ticketNumber === id);
 
     if (index === -1) {
@@ -766,8 +824,12 @@ class ComplaintService {
     notifyStudent: boolean = true
   ): Promise<Complaint[]> {
     this.ensureInitialized();
-    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
     const currentUser = authService.getCurrentUser();
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Unauthorized: Only administrators are permitted to perform bulk status updates.');
+    }
+
+    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
     const timestamp = new Date().toISOString();
     const idSet = new Set(ids);
 
@@ -947,7 +1009,26 @@ class ComplaintService {
       throw new Error(`Complaint with ID ${complaintId} not found`);
     }
 
+    if (!currentUser) {
+      throw new Error('Unauthorized: An authenticated session is required to add comments.');
+    }
+
+    // Confidentiality rule: Only administrators are permitted to create internal notes
+    if (isInternal && currentUser.role !== 'admin') {
+      throw new Error('Unauthorized: Only administrators are permitted to create internal notes.');
+    }
+
     const complaint = complaints[index];
+
+    // Students can only comment on their own complaints
+    if (
+      currentUser.role === 'student' &&
+      complaint.studentId !== currentUser.id &&
+      complaint.studentEmail !== currentUser.email
+    ) {
+      throw new Error('Unauthorized: Students can only comment on their own complaints.');
+    }
+
     const timestamp = new Date().toISOString();
     const commentId = `comment-${Date.now()}`;
 
@@ -1026,8 +1107,16 @@ class ComplaintService {
       throw new Error('Complaint reopening is currently disabled by institutional policy.');
     }
 
-    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
     const currentUser = authService.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('Unauthorized: An authenticated session is required to reopen complaints.');
+    }
+
+    if (currentUser.role === 'staff') {
+      throw new Error('Unauthorized: Staff members cannot reopen complaints.');
+    }
+
+    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
     const index = complaints.findIndex(
       (c) => c.id === complaintId || c.ticketNumber === complaintId
     );
@@ -1037,6 +1126,16 @@ class ComplaintService {
     }
 
     const complaint = complaints[index];
+
+    // Students can only reopen their own complaints
+    if (
+      currentUser.role === 'student' &&
+      complaint.studentId !== currentUser.id &&
+      complaint.studentEmail !== currentUser.email
+    ) {
+      throw new Error('Unauthorized: Students can only reopen their own complaints.');
+    }
+
     if (complaint.status !== 'resolved' && complaint.status !== 'rejected') {
       throw new Error('Only resolved or rejected complaints can be reopened');
     }

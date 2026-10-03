@@ -243,6 +243,10 @@ class NotificationService {
     data: Omit<Notification, 'id' | 'createdAt' | 'read' | 'userId'> & { broadcastId?: string },
     target: 'all' | 'all_students' = 'all_students'
   ): Promise<Notification> {
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Unauthorized: Only administrators are permitted to dispatch broadcast notifications.');
+    }
     return this.createNotification({
       ...data,
       userId: target,
@@ -258,12 +262,16 @@ class NotificationService {
     payload: SendBroadcastPayload
   ): Promise<BroadcastNotification> {
     this.ensureInitialized();
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Unauthorized: Only administrators are permitted to dispatch broadcast notifications.');
+    }
+
     const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
     const broadcasts = getStorageItem<BroadcastNotification[]>(
       STORAGE_KEYS.BROADCASTS,
       MOCK_BROADCASTS
     );
-    const currentUser = authService.getCurrentUser();
     const timestamp = new Date().toISOString();
     const broadcastId = payload.broadcastId || `bc-${Date.now()}`;
 

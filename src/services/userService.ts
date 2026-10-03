@@ -76,6 +76,11 @@ class UserService {
 
   public async toggleUserStatus(id: string): Promise<User> {
     this.ensureInitialized();
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Unauthorized: Only administrators are permitted to change user account status.');
+    }
+
     const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
     const index = users.findIndex((u) => u.id === id);
 
@@ -89,8 +94,7 @@ class UserService {
 
     if (nextStatus === 'inactive') {
       // 1. Prevent admin from deactivating their own account
-      const currentUser = authService.getCurrentUser();
-      if (currentUser && currentUser.id === id && currentUser.role === 'admin') {
+      if (currentUser.id === id && currentUser.role === 'admin') {
         throw new Error('You cannot deactivate your own account.');
       }
 
@@ -128,6 +132,11 @@ class UserService {
 
   public async updateUserRole(id: string, role: Role): Promise<User> {
     this.ensureInitialized();
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Unauthorized: Only administrators are permitted to change user roles.');
+    }
+
     const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
     const index = users.findIndex((u) => u.id === id);
 
@@ -139,8 +148,7 @@ class UserService {
 
     // Safeguards for demoting an administrator
     if (targetUser.role === 'admin' && role !== 'admin') {
-      const currentUser = authService.getCurrentUser();
-      if (currentUser && currentUser.id === id) {
+      if (currentUser.id === id) {
         throw new Error('You cannot remove your own administrator privileges.');
       }
 
@@ -170,6 +178,15 @@ class UserService {
 
   public async updateProfile(id: string, data: Partial<User>): Promise<User> {
     this.ensureInitialized();
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('Unauthorized: An authenticated session is required to update a user profile.');
+    }
+
+    if (currentUser.role !== 'admin' && currentUser.id !== id) {
+      throw new Error('Unauthorized: You can only update your own profile.');
+    }
+
     const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
     const index = users.findIndex((u) => u.id === id);
 
@@ -177,7 +194,15 @@ class UserService {
       throw new Error(`User with ID ${id} not found`);
     }
 
-    const updatedUser = { ...users[index], ...data };
+    // Prevent non-admins from changing their role, status, or email
+    const sanitizedData = { ...data };
+    if (currentUser.role !== 'admin') {
+      delete sanitizedData.role;
+      delete sanitizedData.status;
+      delete sanitizedData.email;
+    }
+
+    const updatedUser = { ...users[index], ...sanitizedData };
     users[index] = updatedUser;
     setStorageItem(STORAGE_KEYS.USERS, users);
 
