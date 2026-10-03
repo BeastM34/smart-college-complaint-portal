@@ -43,7 +43,64 @@ export const normalizeCategoryToken = (str?: string): string => {
 };
 
 /**
- * Explicit mapping from category identifiers/aliases to canonical department.
+ * Controlled, explicit mappings from normalized category names, slugs, and controlled aliases
+ * to their responsible canonical department.
+ *
+ * Source of truth: MOCK_CATEGORIES & CategoryService:
+ * - 'electrical' / 'Electrical & Power' -> electrical
+ * - 'sanitation' / 'Sanitation & Hygiene' -> housekeeping
+ * - 'infrastructure' / 'Campus Infrastructure' -> maintenance
+ * - 'wifi' / 'network' / 'internet' / 'it' -> it
+ * - 'plumbing' -> plumbing
+ *
+ * Categories without a clear single responsible department (academic, library,
+ * canteen, transport, hostel) deliberately return null and remain unassigned.
+ */
+const EXPLICIT_CATEGORY_TO_DEPT_MAP: Record<string, CanonicalDepartment> = {
+  // IT & Networking
+  'it': 'it',
+  'it support': 'it',
+  'information technology': 'it',
+  'wifi': 'it',
+  'wi fi': 'it',
+  'wi fi network': 'it',
+  'wifi network': 'it',
+  'network': 'it',
+  'network support': 'it',
+  'internet': 'it',
+
+  // Electrical & Power
+  'electrical': 'electrical',
+  'electrical and power': 'electrical',
+  'electrical power': 'electrical',
+  'electrical maintenance': 'electrical',
+  'electricity': 'electrical',
+  'cat 2': 'electrical',
+
+  // Plumbing & Water Supply
+  'plumbing': 'plumbing',
+  'plumbing and water supply': 'plumbing',
+  'plumbing water supply': 'plumbing',
+  'water supply': 'plumbing',
+
+  // Sanitation & Housekeeping
+  'sanitation': 'housekeeping',
+  'sanitation and hygiene': 'housekeeping',
+  'sanitation hygiene': 'housekeeping',
+  'housekeeping': 'housekeeping',
+  'cleaning': 'housekeeping',
+  'cat 4': 'housekeeping',
+
+  // Maintenance & Infrastructure
+  'infrastructure': 'maintenance',
+  'campus infrastructure': 'maintenance',
+  'maintenance': 'maintenance',
+  'cat 3': 'maintenance',
+};
+
+/**
+ * Resolves a complaint category to a canonical department using strict, explicit mappings.
+ * Returns null for unmapped categories so they remain pending and unassigned.
  */
 export const resolveCategoryToCanonicalDepartment = (
   category?: string
@@ -51,79 +108,9 @@ export const resolveCategoryToCanonicalDepartment = (
   const norm = normalizeCategoryToken(category);
   if (!norm) return null;
 
-  const tokens = norm.split(' ');
-
-  // 1. IT: matches 'it', 'wifi', 'wi fi', 'internet', 'network', 'information technology'
-  if (
-    tokens.includes('it') ||
-    tokens.includes('wifi') ||
-    norm.includes('wi fi') ||
-    tokens.includes('internet') ||
-    tokens.includes('network') ||
-    norm.includes('information technology') ||
-    norm.includes('academic facilities and labs') ||
-    norm.includes('academic facilities labs') ||
-    tokens.includes('academic') ||
-    tokens.includes('computers') ||
-    tokens.includes('computer')
-  ) {
-    return 'it';
-  }
-
-  // 2. Electrical: matches 'electrical', 'electric', 'electricity', 'power', 'lighting'
-  if (
-    tokens.includes('electrical') ||
-    tokens.includes('electric') ||
-    tokens.includes('electricity') ||
-    tokens.includes('power') ||
-    tokens.includes('lighting') ||
-    norm.includes('cat 2')
-  ) {
-    return 'electrical';
-  }
-
-  // 3. Plumbing: matches 'plumbing', 'plumb', 'plumber', 'water'
-  if (
-    tokens.includes('plumbing') ||
-    tokens.includes('plumb') ||
-    tokens.includes('plumber') ||
-    tokens.includes('water') ||
-    tokens.includes('drainage') ||
-    tokens.includes('leakage')
-  ) {
-    return 'plumbing';
-  }
-
-  // 4. Housekeeping & Sanitation: matches 'housekeeping', 'sanitation', 'cleaning', 'clean', 'hygiene', 'janitorial', 'waste'
-  if (
-    tokens.includes('housekeeping') ||
-    tokens.includes('sanitation') ||
-    tokens.includes('cleaning') ||
-    tokens.includes('clean') ||
-    tokens.includes('hygiene') ||
-    tokens.includes('janitorial') ||
-    tokens.includes('waste') ||
-    norm.includes('cat 4')
-  ) {
-    return 'housekeeping';
-  }
-
-  // 5. Maintenance & Infrastructure: matches 'maintenance', 'infrastructure', 'furniture', 'civil', 'hostel'
-  if (
-    tokens.includes('maintenance') ||
-    tokens.includes('infrastructure') ||
-    tokens.includes('furniture') ||
-    tokens.includes('civil') ||
-    tokens.includes('hostel') ||
-    norm.includes('cat 1') ||
-    norm.includes('cat 3')
-  ) {
-    return 'maintenance';
-  }
-
-  // 6. Security: matches 'security', 'safety'
-  if (tokens.includes('security') || tokens.includes('safety')) {
-    return 'security';
+  // Direct lookup against explicit category names, slugs, and controlled aliases
+  if (norm in EXPLICIT_CATEGORY_TO_DEPT_MAP) {
+    return EXPLICIT_CATEGORY_TO_DEPT_MAP[norm];
   }
 
   return null;
@@ -205,13 +192,6 @@ export const isCategoryDepartmentMatch = (
 ): boolean => {
   if (!category || !staffDepartment) return false;
 
-  const normCat = normalizeCategoryToken(category);
-  const normDept = normalizeCategoryToken(staffDepartment);
-
-  // Exact normalized equality match
-  if (normCat === normDept && normCat.length > 0) return true;
-
-  // Canonical resolution
   const catCanon = resolveCategoryToCanonicalDepartment(category);
   const deptCanon = resolveStaffDepartmentToCanonical(staffDepartment);
 
