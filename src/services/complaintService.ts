@@ -17,6 +17,309 @@ import { authService } from './authService';
 import { notificationService } from './notificationService';
 import { settingsService } from './settingsService';
 
+export type CanonicalDepartment =
+  | 'it'
+  | 'electrical'
+  | 'plumbing'
+  | 'housekeeping'
+  | 'maintenance'
+  | 'security';
+
+/**
+ * Normalizes text for category and department matching by:
+ * - Converting to lower case
+ * - Replacing '&' with 'and'
+ * - Replacing hyphens, underscores and non-alphanumeric chars with spaces
+ * - Trimming and collapsing multiple whitespace chars
+ */
+export const normalizeCategoryToken = (str?: string): string => {
+  if (!str || typeof str !== 'string') return '';
+  return str
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+/**
+ * Explicit mapping from category identifiers/aliases to canonical department.
+ */
+export const resolveCategoryToCanonicalDepartment = (
+  category?: string
+): CanonicalDepartment | null => {
+  const norm = normalizeCategoryToken(category);
+  if (!norm) return null;
+
+  const tokens = norm.split(' ');
+
+  // 1. IT: matches 'it', 'wifi', 'wi fi', 'internet', 'network', 'information technology'
+  if (
+    tokens.includes('it') ||
+    tokens.includes('wifi') ||
+    norm.includes('wi fi') ||
+    tokens.includes('internet') ||
+    tokens.includes('network') ||
+    norm.includes('information technology') ||
+    norm.includes('academic facilities and labs') ||
+    norm.includes('academic facilities labs') ||
+    tokens.includes('academic') ||
+    tokens.includes('computers') ||
+    tokens.includes('computer')
+  ) {
+    return 'it';
+  }
+
+  // 2. Electrical: matches 'electrical', 'electric', 'electricity', 'power', 'lighting'
+  if (
+    tokens.includes('electrical') ||
+    tokens.includes('electric') ||
+    tokens.includes('electricity') ||
+    tokens.includes('power') ||
+    tokens.includes('lighting') ||
+    norm.includes('cat 2')
+  ) {
+    return 'electrical';
+  }
+
+  // 3. Plumbing: matches 'plumbing', 'plumb', 'plumber', 'water'
+  if (
+    tokens.includes('plumbing') ||
+    tokens.includes('plumb') ||
+    tokens.includes('plumber') ||
+    tokens.includes('water') ||
+    tokens.includes('drainage') ||
+    tokens.includes('leakage')
+  ) {
+    return 'plumbing';
+  }
+
+  // 4. Housekeeping & Sanitation: matches 'housekeeping', 'sanitation', 'cleaning', 'clean', 'hygiene', 'janitorial', 'waste'
+  if (
+    tokens.includes('housekeeping') ||
+    tokens.includes('sanitation') ||
+    tokens.includes('cleaning') ||
+    tokens.includes('clean') ||
+    tokens.includes('hygiene') ||
+    tokens.includes('janitorial') ||
+    tokens.includes('waste') ||
+    norm.includes('cat 4')
+  ) {
+    return 'housekeeping';
+  }
+
+  // 5. Maintenance & Infrastructure: matches 'maintenance', 'infrastructure', 'furniture', 'civil', 'hostel'
+  if (
+    tokens.includes('maintenance') ||
+    tokens.includes('infrastructure') ||
+    tokens.includes('furniture') ||
+    tokens.includes('civil') ||
+    tokens.includes('hostel') ||
+    norm.includes('cat 1') ||
+    norm.includes('cat 3')
+  ) {
+    return 'maintenance';
+  }
+
+  // 6. Security: matches 'security', 'safety'
+  if (tokens.includes('security') || tokens.includes('safety')) {
+    return 'security';
+  }
+
+  return null;
+};
+
+/**
+ * Explicit mapping from staff member department to canonical department.
+ * CRITICAL: Standalone token checks ensure unrelated departments like "facilities" NEVER match "it".
+ */
+export const resolveStaffDepartmentToCanonical = (
+  department?: string
+): CanonicalDepartment | null => {
+  const norm = normalizeCategoryToken(department);
+  if (!norm) return null;
+
+  const tokens = norm.split(' ');
+
+  // 1. IT: matches standalone 'it' token, 'network', 'information technology', 'it support', 'it services'
+  // Notice: 'facilities' has tokens ['facilities'], so tokens.includes('it') is FALSE!
+  if (
+    tokens.includes('it') ||
+    tokens.includes('network') ||
+    norm.includes('information technology')
+  ) {
+    return 'it';
+  }
+
+  // 2. Electrical
+  if (
+    tokens.includes('electrical') ||
+    tokens.includes('electric') ||
+    tokens.includes('electrician')
+  ) {
+    return 'electrical';
+  }
+
+  // 3. Plumbing
+  if (
+    tokens.includes('plumbing') ||
+    tokens.includes('plumber')
+  ) {
+    return 'plumbing';
+  }
+
+  // 4. Housekeeping & Sanitation
+  if (
+    tokens.includes('housekeeping') ||
+    tokens.includes('sanitation') ||
+    tokens.includes('cleaning')
+  ) {
+    return 'housekeeping';
+  }
+
+  // 5. Maintenance & Infrastructure (including Facilities)
+  if (
+    tokens.includes('maintenance') ||
+    tokens.includes('infrastructure') ||
+    tokens.includes('facilities') ||
+    tokens.includes('civil') ||
+    tokens.includes('estate')
+  ) {
+    return 'maintenance';
+  }
+
+  // 6. Security
+  if (tokens.includes('security') || tokens.includes('safety')) {
+    return 'security';
+  }
+
+  return null;
+};
+
+/**
+ * Checks whether a complaint category matches a staff member's department without false substring matches.
+ */
+export const isCategoryDepartmentMatch = (
+  category?: string,
+  staffDepartment?: string
+): boolean => {
+  if (!category || !staffDepartment) return false;
+
+  const normCat = normalizeCategoryToken(category);
+  const normDept = normalizeCategoryToken(staffDepartment);
+
+  // Exact normalized equality match
+  if (normCat === normDept && normCat.length > 0) return true;
+
+  // Canonical resolution
+  const catCanon = resolveCategoryToCanonicalDepartment(category);
+  const deptCanon = resolveStaffDepartmentToCanonical(staffDepartment);
+
+  if (catCanon && deptCanon && catCanon === deptCanon) {
+    return true;
+  }
+
+  return false;
+};
+
+const ALLOWED_ATTACHMENT_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+]);
+
+/**
+ * Validates an individual attachment payload submitted with a complaint.
+ * Enforces:
+ * 1. Must be a valid string starting with "data:".
+ * 2. Must be a properly formatted Data URL with MIME type and ";base64" separator.
+ * 3. Must be one of the supported image formats: JPEG/JPG, PNG, WebP.
+ * 4. Must contain non-empty, valid Base64 data.
+ * 5. Decoded binary byte size (accounting for padding) must not exceed maxAttachmentSizeMB.
+ */
+export function validateAttachmentPayload(
+  att: unknown,
+  index: number,
+  maxSizeMB: number
+): void {
+  const position = index + 1;
+
+  if (typeof att !== 'string' || !att.trim()) {
+    throw new Error(
+      `Invalid attachment at position ${position}: Attachment must be a valid non-empty data URL string.`
+    );
+  }
+
+  const trimmed = att.trim();
+  if (!trimmed.startsWith('data:')) {
+    throw new Error(
+      `Malformed attachment at position ${position}: Attachment must be a valid Data URL starting with "data:".`
+    );
+  }
+
+  const commaIndex = trimmed.indexOf(',');
+  if (commaIndex === -1) {
+    throw new Error(
+      `Malformed attachment at position ${position}: Data URL is missing the base64 content separator.`
+    );
+  }
+
+  const header = trimmed.slice(0, commaIndex);
+  const base64Data = trimmed.slice(commaIndex + 1);
+
+  // Parse header: data:<mime-type>[;charset=...];base64
+  const headerMatch = header.match(/^data:([^;]+)(?:;[^;]+)*;base64$/i);
+  if (!headerMatch) {
+    throw new Error(
+      `Malformed attachment at position ${position}: Data URL must declare a valid MIME type and ";base64" encoding.`
+    );
+  }
+
+  const mimeType = headerMatch[1].toLowerCase().trim();
+  if (!ALLOWED_ATTACHMENT_MIME_TYPES.has(mimeType)) {
+    throw new Error(
+      `Unsupported attachment format "${mimeType}" at position ${position}. Only JPEG, PNG, and WebP images are allowed.`
+    );
+  }
+
+  if (!base64Data || base64Data.trim().length === 0) {
+    throw new Error(
+      `Malformed attachment at position ${position}: Base64 data payload is empty.`
+    );
+  }
+
+  const cleanBase64 = base64Data.replace(/[\r\n\s]+/g, '');
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(cleanBase64) || cleanBase64.length % 4 !== 0) {
+    throw new Error(
+      `Malformed attachment at position ${position}: Invalid Base64 data encoding.`
+    );
+  }
+
+  // Calculate decoded byte size accounting for Base64 padding
+  let padding = 0;
+  if (cleanBase64.endsWith('==')) {
+    padding = 2;
+  } else if (cleanBase64.endsWith('=')) {
+    padding = 1;
+  }
+
+  const decodedBytes = Math.floor((cleanBase64.length * 3) / 4) - padding;
+  if (decodedBytes <= 0) {
+    throw new Error(
+      `Malformed attachment at position ${position}: Attachment payload contains zero decoded bytes.`
+    );
+  }
+
+  const maxSizeBytes = maxSizeMB * 1024 * 1024;
+  if (decodedBytes > maxSizeBytes) {
+    const actualMB = (decodedBytes / (1024 * 1024)).toFixed(2);
+    throw new Error(
+      `Attachment exceeds the maximum allowed file size of ${maxSizeMB}MB (actual size: ${actualMB}MB).`
+    );
+  }
+}
+
 /**
  * Complaint Service
  * Manages fetching, filtering, creating, and updating complaint data.
@@ -160,23 +463,20 @@ class ComplaintService {
 
     // 2. Attachments Count Enforcement
     const maxAttachments = settings.maxAttachmentsPerComplaint ?? 3;
-    if (data.attachments && data.attachments.length > maxAttachments) {
-      throw new Error(
-        `Maximum ${maxAttachments} attachments allowed per complaint. Received ${data.attachments.length}.`
-      );
-    }
+    if (data.attachments !== undefined) {
+      if (!Array.isArray(data.attachments)) {
+        throw new Error('Attachments must be provided as an array of data URLs.');
+      }
+      if (data.attachments.length > maxAttachments) {
+        throw new Error(
+          `Maximum ${maxAttachments} attachments allowed per complaint. Received ${data.attachments.length}.`
+        );
+      }
 
-    // 3. Attachments Size Enforcement
-    const maxSizeMB = settings.maxAttachmentSizeMB ?? 5;
-    if (data.attachments && data.attachments.length > 0) {
-      for (const att of data.attachments) {
-        if (typeof att === 'string' && att.startsWith('data:')) {
-          const base64Content = att.slice(att.indexOf(',') + 1);
-          const sizeInMB = (base64Content.length * 0.75) / (1024 * 1024);
-          if (sizeInMB > maxSizeMB) {
-            throw new Error(`Attachment exceeds the maximum allowed file size of ${maxSizeMB}MB.`);
-          }
-        }
+      // 3. Attachments Validation (Format, Encoding, and Size)
+      const maxSizeMB = settings.maxAttachmentSizeMB ?? 5;
+      for (let i = 0; i < data.attachments.length; i++) {
+        validateAttachmentPayload(data.attachments[i], i, maxSizeMB);
       }
     }
 
@@ -210,40 +510,12 @@ class ComplaintService {
 
     if (settings.autoAssignComplaints) {
       const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
-      // Only select active personnel whose role is staff
+      // Only select active personnel whose role is staff with a valid id
       const activeStaff = users.filter(
-        (u) => u.role === 'staff' && (u.status || 'active') === 'active'
+        (u) => u.role === 'staff' && (u.status || 'active') === 'active' && !!u.id
       );
 
-      const catLower = (data.category || '').toLowerCase().trim();
-      const isDepartmentMatch = (deptName?: string): boolean => {
-        if (!deptName) return false;
-        const d = deptName.toLowerCase().trim();
-        if (catLower.includes('electric') && d.includes('electric')) return true;
-        if (catLower.includes('plumb') && d.includes('plumb')) return true;
-        if (
-          (catLower.includes('wifi') || catLower.includes('internet') || catLower === 'it' || catLower.includes('network')) &&
-          (d.includes('it') || d.includes('support') || d.includes('network'))
-        ) {
-          return true;
-        }
-        if (
-          (catLower.includes('clean') || catLower.includes('sanitat') || catLower.includes('hygiene')) &&
-          (d.includes('housekeeping') || d.includes('clean') || d.includes('sanitat'))
-        ) {
-          return true;
-        }
-        if (
-          (catLower.includes('furn') || catLower.includes('infra') || catLower.includes('maintenance')) &&
-          (d.includes('maintenance') || d.includes('infra'))
-        ) {
-          return true;
-        }
-        if (catLower === d) return true;
-        return false;
-      };
-
-      const handler = activeStaff.find((p) => isDepartmentMatch(p.department));
+      const handler = activeStaff.find((p) => isCategoryDepartmentMatch(data.category, p.department));
 
       if (handler) {
         assignedTo = handler.id;
