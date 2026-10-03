@@ -9,11 +9,13 @@ import type {
   ComplaintComment,
   AdminKPIStats,
   AdminActivityEvent,
+  User,
 } from '@/types';
 import { STORAGE_KEYS, getStorageItem, setStorageItem } from '@/utils/storage';
-import { MOCK_COMPLAINTS } from '@/data/mockData';
+import { MOCK_COMPLAINTS, MOCK_USERS } from '@/data/mockData';
 import { authService } from './authService';
 import { notificationService } from './notificationService';
+import { settingsService } from './settingsService';
 
 /**
  * Complaint Service
@@ -149,6 +151,37 @@ class ComplaintService {
     this.ensureInitialized();
     const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
     const currentUser = authService.getCurrentUser();
+    const settings = settingsService.getSettingsSync();
+
+    // 1. Maintenance Mode Enforcement
+    if (settings.maintenanceMode && currentUser?.role !== 'admin') {
+      throw new Error('Complaint submissions are temporarily disabled due to scheduled system maintenance.');
+    }
+
+    // 2. Attachments Count Enforcement
+    const maxAttachments = settings.maxAttachmentsPerComplaint ?? 3;
+    if (data.attachments && data.attachments.length > maxAttachments) {
+      throw new Error(
+        `Maximum of ${maxAttachments} attachment(s) allowed per complaint. Received ${data.attachments.length}.`
+      );
+    }
+
+    // 3. Attachments Size Enforcement
+    const maxSizeMB = settings.maxAttachmentSizeMB ?? 5;
+    if (data.attachments && data.attachments.length > 0) {
+      for (const att of data.attachments) {
+        if (typeof att === 'string' && att.startsWith('data:')) {
+          const base64Content = att.slice(att.indexOf(',') + 1);
+          const sizeInMB = (base64Content.length * 0.75) / (1024 * 1024);
+          if (sizeInMB > maxSizeMB) {
+            throw new Error(`Attachment exceeds the maximum allowed file size of ${maxSizeMB}MB.`);
+          }
+        }
+      }
+    }
+
+    // 4. Default Priority Resolution
+    const finalPriority: Priority = data.priority || settings.defaultPriority || 'medium';
 
     const timestamp = new Date().toISOString();
 
@@ -168,11 +201,57 @@ class ComplaintService {
     const ticketNumber = `CMP-${nextSeq}`;
     const id = `cmp-${nextSeq}`;
 
+    // 5. Automatic Complaint Assignment Resolution
+    let initialStatus: ComplaintStatus = 'pending';
+    let assignedTo: string | undefined = undefined;
+    let assignedStaffName: string | undefined = undefined;
+    let assignedDepartment: string | undefined = undefined;
+    let initialTimelineMessage = 'Complaint submitted by student.';
+
+    if (settings.autoAssignComplaints) {
+      const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
+      const activePersonnel = users.filter(
+        (u) => (u.role === 'staff' || u.role === 'admin') && (u.status || 'active') === 'active'
+      );
+
+      const catLower = (data.category || '').toLowerCase();
+      let handler = activePersonnel.find((p) => {
+        const deptLower = (p.department || '').toLowerCase();
+        if (catLower.includes('electric') && deptLower.includes('electric')) return true;
+        if (catLower.includes('plumb') && deptLower.includes('plumb')) return true;
+        if (
+          (catLower.includes('wifi') || catLower.includes('internet')) &&
+          (deptLower.includes('it') || deptLower.includes('support') || deptLower.includes('network'))
+        ) {
+          return true;
+        }
+        if (catLower.includes('clean') && (deptLower.includes('housekeeping') || deptLower.includes('clean'))) {
+          return true;
+        }
+        if (catLower.includes('furn') && deptLower.includes('maintenance')) return true;
+        return false;
+      });
+
+      if (!handler) {
+        handler = activePersonnel.find((p) => p.role === 'staff') || activePersonnel.find((p) => p.role === 'admin');
+      }
+
+      if (handler) {
+        assignedTo = handler.id;
+        assignedStaffName = handler.name;
+        assignedDepartment = handler.department;
+        initialStatus = 'assigned';
+        initialTimelineMessage = `Complaint submitted by student and automatically assigned to ${handler.name} (${handler.department || 'Staff'}).`;
+      } else {
+        initialTimelineMessage = 'Complaint submitted by student (auto-assignment pending: no active technician currently available).';
+      }
+    }
+
     const initialTimeline: TimelineEvent = {
       id: `tl-${Date.now()}`,
       complaintId: id,
-      status: 'pending',
-      message: 'Complaint submitted by student.',
+      status: initialStatus,
+      message: initialTimelineMessage,
       updatedBy: currentUser?.name || data.studentName || 'Student',
       role: 'student',
       timestamp,
@@ -182,7 +261,11 @@ class ComplaintService {
       ...data,
       id,
       ticketNumber,
-      status: 'pending',
+      priority: finalPriority,
+      status: initialStatus,
+      assignedTo,
+      assignedStaffName,
+      assignedDepartment,
       createdAt: timestamp,
       updatedAt: timestamp,
       timeline: [initialTimeline],
@@ -672,6 +755,11 @@ class ComplaintService {
     reason: string
   ): Promise<Complaint> {
     this.ensureInitialized();
+    const settings = settingsService.getSettingsSync();
+    if (!settings.allowReopening) {
+      throw new Error('Complaint reopening is currently disabled by institutional policy.');
+    }
+
     const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
     const currentUser = authService.getCurrentUser();
     const index = complaints.findIndex(

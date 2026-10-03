@@ -2,6 +2,7 @@ import type { Notification, BroadcastNotification, User } from '@/types';
 import { STORAGE_KEYS, getStorageItem, setStorageItem } from '@/utils/storage';
 import { MOCK_NOTIFICATIONS, MOCK_BROADCASTS, MOCK_USERS } from '@/data/mockData';
 import { authService } from './authService';
+import { settingsService } from './settingsService';
 
 export interface SendBroadcastPayload {
   title: string;
@@ -166,6 +167,29 @@ class NotificationService {
     data: Omit<Notification, 'id' | 'createdAt' | 'read'>
   ): Promise<Notification> {
     this.ensureInitialized();
+    const settings = settingsService.getSettingsSync();
+
+    // Check studentNotifications policy: if false, suppress routine student notifications
+    if (!settings.studentNotifications) {
+      const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
+      const recipient = users.find((u) => u.id === data.userId);
+      const isStudentRecipient =
+        data.userId === 'all_students' ||
+        data.userId === 'all' ||
+        recipient?.role === 'student' ||
+        (!recipient && data.userId !== 'admin' && data.userId !== 'user-admin-1');
+
+      if (isStudentRecipient && data.type !== 'error' && data.category !== 'security_alert') {
+        // Return suppressed notification object without saving to user's storage
+        return {
+          ...data,
+          id: `suppressed-${Date.now()}`,
+          read: true,
+          createdAt: new Date().toISOString(),
+        };
+      }
+    }
+
     const notifications = getStorageItem<Notification[]>(
       STORAGE_KEYS.NOTIFICATIONS,
       MOCK_NOTIFICATIONS

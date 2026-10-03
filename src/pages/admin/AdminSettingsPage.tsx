@@ -246,6 +246,47 @@ export const AdminSettingsPage: React.FC = () => {
               />
             </div>
 
+            {/* Attachment Limits */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Max Attachments Per Complaint
+                </label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={settings.maxAttachmentsPerComplaint ?? 3}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      maxAttachmentsPerComplaint: Math.max(1, parseInt(e.target.value) || 1),
+                    })
+                  }
+                  helperText="Maximum photo attachments permitted per single ticket submission (1-10)."
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Max Attachment Size (MB)
+                </label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={25}
+                  value={settings.maxAttachmentSizeMB ?? 5}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      maxAttachmentSizeMB: Math.max(1, parseInt(e.target.value) || 1),
+                    })
+                  }
+                  helperText="Maximum allowable image upload file size in megabytes (1-25 MB)."
+                />
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
               {/* Auto assignment */}
               <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800">
@@ -339,12 +380,17 @@ export const AdminSettingsPage: React.FC = () => {
                   }
                   className="mt-1 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                 />
-                <div>
-                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
-                    Student In-Portal Notifications
-                  </span>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      Student In-Portal Notifications
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                      Active In-App Channel
+                    </span>
+                  </div>
                   <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
-                    Deliver real-time bell badge updates and ticket lifecycle events directly into student portals.
+                    Deliver real-time bell badge updates and ticket lifecycle events directly into student portals. Disabling suppresses routine student alerts while keeping admin alerts operational.
                   </span>
                 </div>
               </label>
@@ -361,12 +407,44 @@ export const AdminSettingsPage: React.FC = () => {
                   }
                   className="mt-1 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                 />
-                <div>
-                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
-                    Email Notifications
-                  </span>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      Email Notifications
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                      Simulated
+                    </span>
+                  </div>
                   <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
-                    Forward critical status updates and technician assignments to registered university email addresses.
+                    Outgoing emails are logged for demonstration purposes and cannot actually be dispatched without external SMTP configuration.
+                  </span>
+                </div>
+              </label>
+            </div>
+
+            {/* SMS Notifications */}
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.smsNotifications ?? false}
+                  onChange={(e) =>
+                    setSettings({ ...settings, smsNotifications: e.target.checked })
+                  }
+                  className="mt-1 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      SMS Notifications
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                      Not Configured
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                    SMS gateway provider (Twilio/AWS SNS) is not configured in this demo environment. Outgoing SMS alerts will not leave the system.
                   </span>
                 </div>
               </label>
@@ -383,12 +461,17 @@ export const AdminSettingsPage: React.FC = () => {
                   }
                   className="mt-1 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                 />
-                <div>
-                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
-                    Push Notifications
-                  </span>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      Push Notifications
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300">
+                      Simulated / In-App Only
+                    </span>
+                  </div>
                   <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
-                    Enable browser notification push for immediate broadcast emergency alerts.
+                    Browser push web service workers require institutional VAPID credentials; operating via live in-app alerts and notifications.
                   </span>
                 </div>
               </label>

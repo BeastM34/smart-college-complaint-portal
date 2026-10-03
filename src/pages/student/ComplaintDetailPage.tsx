@@ -43,6 +43,7 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { complaintService } from '@/services/complaintService';
+import { settingsService } from '@/services/settingsService';
 import type { Complaint, ComplaintStatus, Priority } from '@/types';
 
 // Visual Stage Pipeline steps
@@ -71,6 +72,7 @@ export const ComplaintDetailPage: React.FC = () => {
   const [reopenModalOpen, setReopenModalOpen] = useState(false);
   const [reopenReason, setReopenReason] = useState('');
   const [reopening, setReopening] = useState(false);
+  const [allowReopening, setAllowReopening] = useState(true);
 
   // Satisfaction state
   const [satisfactionRating, setSatisfactionRating] = useState<'satisfied' | 'not_satisfied'>('satisfied');
@@ -95,6 +97,11 @@ export const ComplaintDetailPage: React.FC = () => {
 
   useEffect(() => {
     fetchComplaint();
+    settingsService.getSettings().then((s) => {
+      setAllowReopening(s.allowReopening);
+    }).catch((err) => {
+      console.warn('Failed to load settings in complaint details:', err);
+    });
   }, [id]);
 
   // Compute current stage index for progress tracker
@@ -136,6 +143,11 @@ export const ComplaintDetailPage: React.FC = () => {
 
   // Reopen Complaint Handler
   const handleReopen = async () => {
+    if (!allowReopening) {
+      toastError('Complaint reopening is currently disabled by institutional policy.', 'Reopen Disabled');
+      return;
+    }
+
     if (!complaint || !reopenReason.trim()) {
       toastError('Please provide a reason for reopening this complaint', 'Reason Required');
       return;
@@ -277,15 +289,22 @@ export const ComplaintDetailPage: React.FC = () => {
 
           {/* Action button if eligible for reopen */}
           {isResolvedOrRejected && (
-            <Button
-              variant="outline"
-              size="sm"
-              leftIcon={<RotateCcw className="w-3.5 h-3.5 text-amber-600" />}
-              onClick={() => setReopenModalOpen(true)}
-              className="shrink-0 border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40"
-            >
-              Reopen Complaint
-            </Button>
+            allowReopening ? (
+              <Button
+                variant="outline"
+                size="sm"
+                leftIcon={<RotateCcw className="w-3.5 h-3.5 text-amber-600" />}
+                onClick={() => setReopenModalOpen(true)}
+                className="shrink-0 border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+              >
+                Reopen Complaint
+              </Button>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
+                <Info className="w-3.5 h-3.5 text-slate-400" />
+                <span>Ticket reopening disabled by college policy</span>
+              </div>
+            )
           )}
         </div>
 

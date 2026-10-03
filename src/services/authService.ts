@@ -1,6 +1,7 @@
 import type { User, Role, RegisterData } from '@/types';
 import { STORAGE_KEYS, getStorageItem, setStorageItem, removeStorageItem } from '@/utils/storage';
 import { MOCK_USERS } from '@/data/mockData';
+import { settingsService } from '@/services/settingsService';
 
 /**
  * Authentication Service
@@ -132,6 +133,12 @@ class AuthService {
 
   public async register(data: RegisterData): Promise<User> {
     this.ensureUsersSeeded();
+
+    const settings = settingsService.getSettingsSync();
+    if (!settings.allowStudentRegistration) {
+      throw new Error('New student self-registration is currently disabled by the administration.');
+    }
+
     const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
 
     // Validate required fields

@@ -26,8 +26,12 @@ import {
 } from '@/components/common';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
+import { settingsService } from '@/services/settingsService';
 
 export const RegisterPage: React.FC = () => {
+  const [registrationAllowed, setRegistrationAllowed] = useState<boolean>(() =>
+    settingsService.getSettingsSync().allowStudentRegistration
+  );
   const [name, setName] = useState('');
   const [studentId, setStudentId] = useState('');
   const [email, setEmail] = useState('');
@@ -47,6 +51,12 @@ export const RegisterPage: React.FC = () => {
   const { register, user, isAuthenticated } = useAuth();
   const { success, error: toastError } = useToast();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    settingsService.getSettings().then((s) => {
+      setRegistrationAllowed(s.allowStudentRegistration);
+    });
+  }, []);
 
   // If already logged in, redirect to respective dashboard
   useEffect(() => {
@@ -135,6 +145,43 @@ export const RegisterPage: React.FC = () => {
       setLoading(false);
     }
   };
+
+  if (!registrationAllowed) {
+    return (
+      <div className="min-h-[85vh] flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-md space-y-6 text-center">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400">
+            <UserPlus className="w-7 h-7" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+              Student Registration Closed
+            </h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              New student self-registration is currently paused by institutional administration.
+            </p>
+          </div>
+          <Card className="border-amber-200 dark:border-amber-900/50 bg-amber-50/30 dark:bg-amber-950/20 text-left">
+            <CardContent className="p-4 sm:p-5 space-y-3 text-xs sm:text-sm text-slate-600 dark:text-slate-300">
+              <p>
+                If you already have an active student account, you can sign in directly with your university email.
+              </p>
+              <p>
+                If you need a new account created or roll number verified, please contact the campus administrative helpdesk.
+              </p>
+            </CardContent>
+          </Card>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Link to="/login" className="w-full sm:w-auto">
+              <Button variant="primary" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white">
+                Back to Sign In
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[85vh] flex items-center justify-center px-4 py-12">

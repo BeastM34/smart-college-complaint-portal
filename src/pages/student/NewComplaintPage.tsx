@@ -37,6 +37,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { complaintService } from '@/services/complaintService';
 import { categoryService } from '@/services/categoryService';
+import { settingsService } from '@/services/settingsService';
 import type { Priority, ComplaintCategory, Complaint, CategoryItem } from '@/types';
 
 // Step definitions
@@ -149,6 +150,10 @@ export const NewComplaintPage: React.FC = () => {
   const [category, setCategory] = useState<ComplaintCategory>('electrical');
   const [priority, setPriority] = useState<Priority>('medium');
 
+  // Dynamic Settings Limits
+  const [settingsLimitMB, setSettingsLimitMB] = useState(5);
+  const [maxAttachments, setMaxAttachments] = useState(3);
+
   // Dynamic Categories from CategoryService
   const [availableCategories, setAvailableCategories] = useState<CategoryItem[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
@@ -180,6 +185,19 @@ export const NewComplaintPage: React.FC = () => {
 
   React.useEffect(() => {
     loadActiveCategories();
+    settingsService.getSettings().then((s) => {
+      if (s.defaultPriority) {
+        setPriority(s.defaultPriority);
+      }
+      if (s.maxAttachmentSizeMB) {
+        setSettingsLimitMB(s.maxAttachmentSizeMB);
+      }
+      if (s.maxAttachmentsPerComplaint) {
+        setMaxAttachments(s.maxAttachmentsPerComplaint);
+      }
+    }).catch((err) => {
+      console.warn('Failed to load settings in NewComplaintPage:', err);
+    });
   }, []);
 
   // Step 2: Location & Description
@@ -236,9 +254,9 @@ export const NewComplaintPage: React.FC = () => {
       return;
     }
 
-    const maxSize = 5 * 1024 * 1024; // 5MB
+    const maxSize = settingsLimitMB * 1024 * 1024;
     if (file.size > maxSize) {
-      const msg = `File is too large (${(file.size / (1024 * 1024)).toFixed(2)}MB). Maximum allowed size is 5MB.`;
+      const msg = `File is too large (${(file.size / (1024 * 1024)).toFixed(2)}MB). Maximum allowed size is ${settingsLimitMB}MB.`;
       setImageError(msg);
       toastError(msg, 'File Too Large');
       return;
@@ -988,7 +1006,7 @@ export const NewComplaintPage: React.FC = () => {
                     Drag and drop your complaint photo here
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
-                    Supported formats: <strong className="font-semibold text-slate-700 dark:text-slate-300">JPG, PNG, or WebP</strong> (Max 5MB)
+                    Supported formats: <strong className="font-semibold text-slate-700 dark:text-slate-300">JPG, PNG, or WebP</strong> (Max {settingsLimitMB}MB)
                   </p>
 
                   <div className="mt-4">

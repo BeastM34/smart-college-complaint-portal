@@ -1,28 +1,44 @@
-import React from 'react';
-import { Sparkles, Shield, User, RefreshCw, Database } from 'lucide-react';
+import React, { useState } from 'react';
+import { Sparkles, Shield, User, RefreshCw, Database, AlertTriangle } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { Dropdown, DropdownItem, DropdownDivider } from './Dropdown';
+import { Modal } from './Modal';
+import { Button } from './Button';
 import { settingsService } from '@/services/settingsService';
 import { useToast } from '@/hooks/useToast';
 import type { Role } from '@/types';
 
 export const DemoModeIndicator: React.FC = () => {
   const { user, switchRole } = useAuth();
-  const { success } = useToast();
+  const { success, error: toastError } = useToast();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   const handleSwitch = (role: Role) => {
     switchRole(role);
     success(`Switched active view to ${role.toUpperCase()}`, 'Demo Mode');
   };
 
-  const handleReset = async () => {
-    await settingsService.resetDemoData();
-    window.location.reload();
+  const handleConfirmReset = async () => {
+    setIsResetting(true);
+    try {
+      await settingsService.resetDemoData();
+      success('All demo data restored to pristine state.', 'Demo Data Reset');
+      setConfirmOpen(false);
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
+    } catch (err) {
+      toastError('Failed to reset demo data', 'Error');
+      console.error(err);
+      setIsResetting(false);
+    }
   };
 
   return (
-    <Dropdown
-      align="right"
+    <>
+      <Dropdown
+        align="right"
       trigger={
         <div
           title="Demo Mode: Operating on local simulated mock database"
@@ -65,10 +81,54 @@ export const DemoModeIndicator: React.FC = () => {
 
       <DropdownItem
         icon={<RefreshCw className="w-4 h-4 text-rose-500" />}
-        onClick={handleReset}
+        onClick={() => setConfirmOpen(true)}
       >
         <span className="text-rose-600 dark:text-rose-400 font-medium">Reset Demo Data</span>
       </DropdownItem>
     </Dropdown>
+
+    {/* Reset Confirmation Modal */}
+    <Modal
+      isOpen={confirmOpen}
+      onClose={() => setConfirmOpen(false)}
+      title={
+        <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
+          <AlertTriangle className="w-5 h-5" />
+          <span>Confirm Demo Reset</span>
+        </div>
+      }
+      description="Restore all mock data across complaints, users, categories, notifications, and settings."
+    >
+      <div className="space-y-4 pt-2 text-xs text-slate-600 dark:text-slate-300">
+        <p>
+          Are you sure you want to reset all demo data?
+        </p>
+        <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/40 text-amber-900 dark:text-amber-200">
+          All ticket modifications, new registrations, comments, and settings changes will be reverted to pristine factory mock values.
+        </div>
+
+        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setConfirmOpen(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="danger"
+            size="sm"
+            isLoading={isResetting}
+            onClick={handleConfirmReset}
+            className="bg-rose-600 hover:bg-rose-700 text-white"
+          >
+            Reset Demo Data
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  </>
   );
 };

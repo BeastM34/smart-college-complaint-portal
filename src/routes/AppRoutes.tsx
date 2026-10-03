@@ -14,6 +14,7 @@ import { HomePage } from '@/pages/public/HomePage';
 import { LoginPage } from '@/pages/public/LoginPage';
 import { RegisterPage } from '@/pages/public/RegisterPage';
 import { ForgotPasswordPage } from '@/pages/public/ForgotPasswordPage';
+import { MaintenancePage } from '@/pages/public/MaintenancePage';
 
 // Student Pages
 import { StudentDashboardPage } from '@/pages/student/StudentDashboardPage';
@@ -45,6 +46,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/maintenance" element={<MaintenancePage />} />
       </Route>
 
       {/* Protected Student Routes */}

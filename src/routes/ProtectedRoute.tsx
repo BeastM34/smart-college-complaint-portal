@@ -4,6 +4,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { authService } from '@/services/authService';
 import type { Role } from '@/types';
 import { SkeletonLoader } from '@/components/common/SkeletonLoader';
+import { settingsService } from '@/services/settingsService';
+import { MaintenancePage } from '@/pages/public/MaintenancePage';
 
 export interface ProtectedRouteProps {
   requiredRole?: Role;
@@ -67,6 +69,12 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ requiredRole }) 
   // Admins attempting /student/* should be redirected to /admin/dashboard
   if (requiredRole === 'student' && liveUser?.role === 'admin') {
     return <Navigate to="/admin/dashboard" replace />;
+  }
+
+  // 3. Maintenance Mode: Restrict student-facing access while preserving administrator access
+  const isMaintenance = settingsService.getSettingsSync().maintenanceMode;
+  if (isMaintenance && liveUser?.role !== 'admin') {
+    return <MaintenancePage />;
   }
 
   return <Outlet />;

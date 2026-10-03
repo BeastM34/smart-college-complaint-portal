@@ -5,8 +5,12 @@ import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, Card
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/useToast';
 import { authService } from '@/services/authService';
+import { settingsService } from '@/services/settingsService';
 
 export const LoginPage: React.FC = () => {
+  const [registrationAllowed, setRegistrationAllowed] = useState<boolean>(() =>
+    settingsService.getSettingsSync().allowStudentRegistration
+  );
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
@@ -30,6 +34,9 @@ export const LoginPage: React.FC = () => {
     if (location.state?.deactivated) {
       setErrorMessage('Your session was ended because this account has been deactivated.');
     }
+    settingsService.getSettings().then((s) => {
+      setRegistrationAllowed(s.allowStudentRegistration);
+    });
   }, [location.state]);
 
   // If already authenticated and account is active, redirect to appropriate dashboard
@@ -264,12 +271,18 @@ export const LoginPage: React.FC = () => {
 
               <p className="text-center text-xs text-slate-500 dark:text-slate-400">
                 New student without an account?{' '}
-                <Link
-                  to="/register"
-                  className="font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
-                >
-                  Register here
-                </Link>
+                {registrationAllowed ? (
+                  <Link
+                    to="/register"
+                    className="font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+                  >
+                    Register here
+                  </Link>
+                ) : (
+                  <span className="text-slate-400 dark:text-slate-500 italic">
+                    (Registration currently closed)
+                  </span>
+                )}
               </p>
             </CardFooter>
           </form>
