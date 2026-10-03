@@ -65,7 +65,7 @@ class AuthService {
     if ((savedUser.status || 'active') === 'inactive' || (liveUser.status || 'active') === 'inactive') {
       return { isValid: false, user: liveUser, reason: 'inactive' };
     }
-    if (savedUser.role && liveUser.role && savedUser.role !== liveUser.role) {
+    if (!savedUser.role || !liveUser.role || savedUser.role !== liveUser.role) {
       return { isValid: false, user: null, reason: 'role_mismatch' };
     }
     return { isValid: true, user: liveUser };
