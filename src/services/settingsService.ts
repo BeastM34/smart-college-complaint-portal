@@ -9,28 +9,140 @@ import {
   MOCK_BROADCASTS,
 } from '@/data/mockData';
 
+const VALID_PRIORITIES: Priority[] = ['low', 'medium', 'high', 'critical'];
+
 /**
  * Settings Service
  * Manages institutional portal settings, administrative preferences, and demo data reset.
  */
 class SettingsService {
   private ensureInitialized(): void {
-    const existing = getStorageItem<Partial<SystemSettings> | null>(STORAGE_KEYS.SETTINGS, null);
-    if (!existing) {
+    const existing = getStorageItem<unknown>(STORAGE_KEYS.SETTINGS, null);
+    if (!existing || typeof existing !== 'object') {
       setStorageItem(STORAGE_KEYS.SETTINGS, MOCK_SETTINGS);
     }
   }
 
   /**
-   * Pure synchronous read of settings with safe fallback merge
+   * Verifies that the current active session belongs to a valid, active administrator in USERS storage.
+   * Throws descriptive unauthorized errors if session is missing, deleted, inactive, or non-admin.
+   */
+  public assertAdminSession(): User {
+    const sessionUser = getStorageItem<User | null>(STORAGE_KEYS.SESSION, null);
+    if (!sessionUser || !sessionUser.id) {
+      throw new Error('Unauthorized: No active session found. Please sign in as an administrator.');
+    }
+
+    const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
+    const liveUser = users.find((u) => u.id === sessionUser.id);
+    if (!liveUser) {
+      throw new Error('Unauthorized: Administrator account could not be found or has been deleted.');
+    }
+
+    if ((liveUser.status || 'active') === 'inactive') {
+      throw new Error('Unauthorized: Administrator account is currently inactive.');
+    }
+
+    if (liveUser.role !== 'admin' || sessionUser.role !== 'admin') {
+      throw new Error('Unauthorized: Only administrators are permitted to perform this action.');
+    }
+
+    return liveUser;
+  }
+
+  /**
+   * Validates and sanitizes settings loaded from localStorage with safe defaults
+   */
+  public validateAndSanitizeSettings(raw: unknown): SystemSettings {
+    const fallback = MOCK_SETTINGS;
+    if (!raw || typeof raw !== 'object') {
+      return { ...fallback };
+    }
+
+    const data = raw as Record<string, unknown>;
+
+    // String fields
+    const portalName =
+      typeof data.portalName === 'string' && data.portalName.trim()
+        ? data.portalName.trim()
+        : fallback.portalName;
+    const academicYear =
+      typeof data.academicYear === 'string' && data.academicYear.trim()
+        ? data.academicYear.trim()
+        : fallback.academicYear;
+    const supportEmail =
+      typeof data.supportEmail === 'string' && data.supportEmail.trim()
+        ? data.supportEmail.trim()
+        : fallback.supportEmail;
+    const supportPhone =
+      typeof data.supportPhone === 'string' && data.supportPhone.trim()
+        ? data.supportPhone.trim()
+        : fallback.supportPhone;
+
+    // Supported priority values
+    const defaultPriority: Priority =
+      typeof data.defaultPriority === 'string' &&
+      VALID_PRIORITIES.includes(data.defaultPriority as Priority)
+        ? (data.defaultPriority as Priority)
+        : fallback.defaultPriority;
+
+    // Positive integer attachment count (1-10)
+    let maxAttachmentsPerComplaint = fallback.maxAttachmentsPerComplaint;
+    if (
+      typeof data.maxAttachmentsPerComplaint === 'number' &&
+      Number.isInteger(data.maxAttachmentsPerComplaint) &&
+      data.maxAttachmentsPerComplaint >= 1
+    ) {
+      maxAttachmentsPerComplaint = Math.min(data.maxAttachmentsPerComplaint, 10);
+    }
+
+    // Positive finite attachment size (MB) (0.1 - 50 MB)
+    let maxAttachmentSizeMB = fallback.maxAttachmentSizeMB;
+    if (
+      typeof data.maxAttachmentSizeMB === 'number' &&
+      Number.isFinite(data.maxAttachmentSizeMB) &&
+      data.maxAttachmentSizeMB > 0
+    ) {
+      maxAttachmentSizeMB = Math.min(Math.round(data.maxAttachmentSizeMB * 10) / 10, 50);
+    }
+
+    // Boolean flags with safe fallback
+    const parseBool = (val: unknown, defaultVal: boolean): boolean =>
+      typeof val === 'boolean' ? val : defaultVal;
+
+    return {
+      portalName,
+      academicYear,
+      supportEmail,
+      supportPhone,
+      defaultPriority,
+      maxAttachmentsPerComplaint,
+      maxAttachmentSizeMB,
+      allowStudentRegistration: parseBool(
+        data.allowStudentRegistration,
+        fallback.allowStudentRegistration
+      ),
+      maintenanceMode: parseBool(data.maintenanceMode, fallback.maintenanceMode),
+      autoAssignComplaints: parseBool(data.autoAssignComplaints, fallback.autoAssignComplaints),
+      allowReopening: parseBool(data.allowReopening, fallback.allowReopening),
+      allowAnonymousComplaints: parseBool(
+        data.allowAnonymousComplaints,
+        fallback.allowAnonymousComplaints
+      ),
+      studentNotifications: parseBool(data.studentNotifications, fallback.studentNotifications),
+      emailNotifications: parseBool(data.emailNotifications, fallback.emailNotifications),
+      smsNotifications: parseBool(data.smsNotifications, fallback.smsNotifications),
+      pushNotifications: parseBool(data.pushNotifications, fallback.pushNotifications),
+    };
+  }
+
+  /**
+   * Pure synchronous read of settings with safe validation and fallback merge
    */
   public getSettingsSync(): SystemSettings {
     this.ensureInitialized();
-    const stored = getStorageItem<Partial<SystemSettings> | null>(STORAGE_KEYS.SETTINGS, null);
-    return {
-      ...MOCK_SETTINGS,
-      ...(stored || {}),
-    };
+    const stored = getStorageItem<unknown>(STORAGE_KEYS.SETTINGS, null);
+    return this.validateAndSanitizeSettings(stored);
   }
 
   public async getSettings(): Promise<SystemSettings> {
@@ -40,11 +152,8 @@ class SettingsService {
   public async updateSettings(data: Partial<SystemSettings>): Promise<SystemSettings> {
     this.ensureInitialized();
 
-    // Guard: Only administrators can modify system settings
-    const sessionUser = getStorageItem<User | null>(STORAGE_KEYS.SESSION, null);
-    if (sessionUser && sessionUser.role !== 'admin') {
-      throw new Error('Unauthorized: Only administrators can modify system settings.');
-    }
+    // Guard: Require an authenticated active administrator in USERS records
+    this.assertAdminSession();
 
     const current = this.getSettingsSync();
     const cleanData: Partial<SystemSettings> = {};
@@ -63,9 +172,10 @@ class SettingsService {
     }
 
     if (data.defaultPriority !== undefined) {
-      const allowed: Priority[] = ['low', 'medium', 'high', 'critical'];
-      if (!allowed.includes(data.defaultPriority)) {
-        throw new Error(`Invalid priority "${data.defaultPriority}". Allowed values: low, medium, high, critical.`);
+      if (!VALID_PRIORITIES.includes(data.defaultPriority)) {
+        throw new Error(
+          `Invalid priority "${data.defaultPriority}". Allowed values: low, medium, high, critical.`
+        );
       }
       cleanData.defaultPriority = data.defaultPriority;
     }
@@ -73,46 +183,73 @@ class SettingsService {
     if (data.maxAttachmentsPerComplaint !== undefined) {
       const count = Number(data.maxAttachmentsPerComplaint);
       if (isNaN(count) || count < 1 || !Number.isInteger(count)) {
-        throw new Error('Maximum attachments per complaint must be a positive whole integer (at least 1).');
+        throw new Error(
+          'Maximum attachments per complaint must be a positive whole integer (at least 1).'
+        );
       }
       cleanData.maxAttachmentsPerComplaint = Math.min(count, 10);
     }
 
     if (data.maxAttachmentSizeMB !== undefined) {
       const size = Number(data.maxAttachmentSizeMB);
-      if (isNaN(size) || size <= 0) {
+      if (isNaN(size) || !Number.isFinite(size) || size <= 0) {
         throw new Error('Maximum attachment size must be a positive number greater than 0 MB.');
       }
       cleanData.maxAttachmentSizeMB = Math.min(Math.round(size * 10) / 10, 50);
     }
 
-    // Boolean flags
+    // Boolean flags validation
+    const validateBoolField = (key: keyof SystemSettings, val: unknown) => {
+      if (typeof val !== 'boolean') {
+        throw new Error(`Setting "${key}" must be a boolean value.`);
+      }
+      return val;
+    };
+
     if (data.allowStudentRegistration !== undefined) {
-      cleanData.allowStudentRegistration = Boolean(data.allowStudentRegistration);
+      cleanData.allowStudentRegistration = validateBoolField(
+        'allowStudentRegistration',
+        data.allowStudentRegistration
+      );
     }
     if (data.maintenanceMode !== undefined) {
-      cleanData.maintenanceMode = Boolean(data.maintenanceMode);
+      cleanData.maintenanceMode = validateBoolField('maintenanceMode', data.maintenanceMode);
     }
     if (data.autoAssignComplaints !== undefined) {
-      cleanData.autoAssignComplaints = Boolean(data.autoAssignComplaints);
+      cleanData.autoAssignComplaints = validateBoolField(
+        'autoAssignComplaints',
+        data.autoAssignComplaints
+      );
     }
     if (data.allowReopening !== undefined) {
-      cleanData.allowReopening = Boolean(data.allowReopening);
+      cleanData.allowReopening = validateBoolField('allowReopening', data.allowReopening);
     }
     if (data.allowAnonymousComplaints !== undefined) {
-      cleanData.allowAnonymousComplaints = Boolean(data.allowAnonymousComplaints);
+      cleanData.allowAnonymousComplaints = validateBoolField(
+        'allowAnonymousComplaints',
+        data.allowAnonymousComplaints
+      );
     }
     if (data.studentNotifications !== undefined) {
-      cleanData.studentNotifications = Boolean(data.studentNotifications);
+      cleanData.studentNotifications = validateBoolField(
+        'studentNotifications',
+        data.studentNotifications
+      );
     }
     if (data.emailNotifications !== undefined) {
-      cleanData.emailNotifications = Boolean(data.emailNotifications);
+      cleanData.emailNotifications = validateBoolField(
+        'emailNotifications',
+        data.emailNotifications
+      );
     }
     if (data.smsNotifications !== undefined) {
-      cleanData.smsNotifications = Boolean(data.smsNotifications);
+      cleanData.smsNotifications = validateBoolField('smsNotifications', data.smsNotifications);
     }
     if (data.pushNotifications !== undefined) {
-      cleanData.pushNotifications = Boolean(data.pushNotifications);
+      cleanData.pushNotifications = validateBoolField(
+        'pushNotifications',
+        data.pushNotifications
+      );
     }
 
     const updated: SystemSettings = { ...current, ...cleanData };
@@ -122,10 +259,11 @@ class SettingsService {
 
   /**
    * Resets all demo data across complaints, users, notifications, categories, and settings
-   * to their initial pristine mock state while safely maintaining authentication state.
+   * to their initial pristine mock state. Requires administrator authorization.
    */
   public async resetDemoData(): Promise<void> {
-    const currentSession = getStorageItem<User | null>(STORAGE_KEYS.SESSION, null);
+    // Guard: Only authenticated administrators can reset demo data
+    const activeAdmin = this.assertAdminSession();
 
     // Reset Complaints
     setStorageItem(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
@@ -149,19 +287,12 @@ class SettingsService {
     // Reset Broadcasts
     setStorageItem(STORAGE_KEYS.BROADCASTS, MOCK_BROADCASTS);
 
-    // Safe session restoration
-    if (currentSession) {
-      const liveUserInMock = resetUsers.find((u) => u.id === currentSession.id);
-      if (liveUserInMock) {
-        setStorageItem(STORAGE_KEYS.SESSION, liveUserInMock);
-      } else if (currentSession.role === 'admin') {
-        const defaultAdmin = resetUsers.find((u) => u.role === 'admin') || resetUsers[0];
-        setStorageItem(STORAGE_KEYS.SESSION, defaultAdmin);
-      } else {
-        const defaultStudent = resetUsers.find((u) => u.role === 'student') || resetUsers[0];
-        setStorageItem(STORAGE_KEYS.SESSION, defaultStudent);
-      }
-    }
+    // Safe session restoration for the authorized admin
+    const restoredAdmin =
+      resetUsers.find((u) => u.id === activeAdmin.id) ||
+      resetUsers.find((u) => u.role === 'admin') ||
+      activeAdmin;
+    setStorageItem(STORAGE_KEYS.SESSION, restoredAdmin);
   }
 }
 

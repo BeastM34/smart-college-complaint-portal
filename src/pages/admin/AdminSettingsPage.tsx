@@ -413,11 +413,11 @@ export const AdminSettingsPage: React.FC = () => {
                       Email Notifications
                     </span>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                      Simulated
+                      Simulated / Not Connected
                     </span>
                   </div>
                   <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
-                    Outgoing emails are logged for demonstration purposes and cannot actually be dispatched without external SMTP configuration.
+                    Email delivery is currently simulated and not connected to an external SMTP host. Outgoing emails cannot be dispatched; all communications remain in-app.
                   </span>
                 </div>
               </label>
@@ -444,7 +444,7 @@ export const AdminSettingsPage: React.FC = () => {
                     </span>
                   </div>
                   <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
-                    SMS gateway provider (Twilio/AWS SNS) is not configured in this demo environment. Outgoing SMS alerts will not leave the system.
+                    SMS telephony gateway is not configured. Outgoing text messages will not be dispatched.
                   </span>
                 </div>
               </label>
@@ -467,11 +467,11 @@ export const AdminSettingsPage: React.FC = () => {
                       Push Notifications
                     </span>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300">
-                      Simulated / In-App Only
+                      Not Configured / In-App Only
                     </span>
                   </div>
                   <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
-                    Browser push web service workers require institutional VAPID credentials; operating via live in-app alerts and notifications.
+                    Web push service workers and VAPID credentials are not configured. Real-time notifications operate exclusively via in-app alerts.
                   </span>
                 </div>
               </label>

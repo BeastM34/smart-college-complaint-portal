@@ -208,11 +208,18 @@ export const NewComplaintPage: React.FC = () => {
   const [description, setDescription] = useState('');
   const [additionalDetails, setAdditionalDetails] = useState('');
 
-  // Step 3: Image Attachment
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  // Step 3: Image Attachments (Multiple Support)
+  interface AttachmentItem {
+    id: string;
+    name: string;
+    sizeBytes: number;
+    sizeFormatted: string;
+    dataUrl: string;
+  }
+
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [isDragging, setIsDragging] = useState(false);
-  const [imageError, setImageError] = useState<string | null>(null);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
 
   // Validation Errors
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -243,31 +250,74 @@ export const NewComplaintPage: React.FC = () => {
     info('Sample college location applied for testing.', 'Demo Location Applied');
   };
 
-  // Image validation & processing
-  const processImageFile = (file: File) => {
-    setImageError(null);
+  // Multiple files validation & processing
+  const processFiles = (fileList: FileList | File[]) => {
+    setAttachmentError(null);
+    const filesArray = Array.from(fileList);
+    if (filesArray.length === 0) return;
+
+    // Check count limit
+    const totalCount = attachments.length + filesArray.length;
+    if (totalCount > maxAttachments) {
+      const msg = `Cannot attach ${filesArray.length} file(s). Maximum allowable attachments is ${maxAttachments} (you currently have ${attachments.length}).`;
+      setAttachmentError(msg);
+      toastError(msg, 'Attachment Limit Exceeded');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    if (!validTypes.includes(file.type.toLowerCase())) {
-      const msg = 'Invalid file format. Please upload JPG, PNG, or WebP only.';
-      setImageError(msg);
-      toastError(msg, 'Upload Failed');
-      return;
-    }
-
     const maxSize = settingsLimitMB * 1024 * 1024;
-    if (file.size > maxSize) {
-      const msg = `File is too large (${(file.size / (1024 * 1024)).toFixed(2)}MB). Maximum allowed size is ${settingsLimitMB}MB.`;
-      setImageError(msg);
-      toastError(msg, 'File Too Large');
-      return;
+
+    // Validate each file individually
+    for (const file of filesArray) {
+      if (!validTypes.includes(file.type.toLowerCase())) {
+        const msg = `"${file.name}" is an unsupported format. Please upload JPG, PNG, or WebP only.`;
+        setAttachmentError(msg);
+        toastError(msg, 'Upload Failed');
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+
+      if (file.size > maxSize) {
+        const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+        const msg = `"${file.name}" (${sizeMB}MB) exceeds the maximum allowed file size of ${settingsLimitMB}MB.`;
+        setAttachmentError(msg);
+        toastError(msg, 'File Too Large');
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
     }
 
-    setImageFile(file);
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setImagePreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    // Process valid files
+    let loaded = 0;
+    const newItems: AttachmentItem[] = [];
+
+    filesArray.forEach((file) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const sizeFormatted =
+          file.size > 1024 * 1024
+            ? `${(file.size / (1024 * 1024)).toFixed(2)} MB`
+            : `${(file.size / 1024).toFixed(1)} KB`;
+
+        newItems.push({
+          id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          name: file.name,
+          sizeBytes: file.size,
+          sizeFormatted,
+          dataUrl: reader.result as string,
+        });
+
+        loaded++;
+        if (loaded === filesArray.length) {
+          setAttachments((prev) => [...prev, ...newItems]);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          success(`Attached ${filesArray.length} photo(s).`, 'Files Added');
+        }
+      };
+      reader.readAsDataURL(file);
+    });
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -282,21 +332,20 @@ export const NewComplaintPage: React.FC = () => {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processImageFile(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processFiles(e.dataTransfer.files);
     }
   };
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      processImageFile(e.target.files[0]);
+    if (e.target.files && e.target.files.length > 0) {
+      processFiles(e.target.files);
     }
   };
 
-  const handleRemoveImage = () => {
-    setImageFile(null);
-    setImagePreview(null);
-    setImageError(null);
+  const handleRemoveAttachment = (idToRemove: string) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== idToRemove));
+    setAttachmentError(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -384,7 +433,7 @@ export const NewComplaintPage: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      const attachmentsList = imagePreview ? [imagePreview] : [];
+      const attachmentsList = attachments.map((a) => a.dataUrl);
 
       const newComplaint = await complaintService.createComplaint({
         title: title.trim(),
@@ -427,9 +476,8 @@ export const NewComplaintPage: React.FC = () => {
     setLocation('');
     setDescription('');
     setAdditionalDetails('');
-    setImageFile(null);
-    setImagePreview(null);
-    setImageError(null);
+    setAttachments([]);
+    setAttachmentError(null);
     setErrors({});
     setSubmittedComplaint(null);
     setCurrentStep(1);
@@ -965,26 +1013,26 @@ export const NewComplaintPage: React.FC = () => {
                 <div>
                   <CardTitle className="flex items-center gap-2 text-lg">
                     <ImageIcon className="w-5 h-5 text-indigo-600" />
-                    <span>Step 3 — Attach Image (Optional)</span>
+                    <span>Step 3 — Attach Photos (Optional)</span>
                   </CardTitle>
                   <CardDescription>
                     Visual evidence helps maintenance technicians arrive with the correct spare parts.
                   </CardDescription>
                 </div>
-                <Badge variant="default" size="sm">
-                  3 of 4
+                <Badge variant={attachments.length >= maxAttachments ? 'warning' : 'default'} size="sm">
+                  {attachments.length} / {maxAttachments} Attached
                 </Badge>
               </div>
             </CardHeader>
 
             <CardContent className="space-y-5">
-              {/* Drag and Drop Zone or Preview */}
-              {!imagePreview ? (
+              {/* Dropzone (visible if under maxAttachments limit) */}
+              {attachments.length < maxAttachments ? (
                 <div
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
-                  className={`border-2 border-dashed rounded-2xl p-8 sm:p-10 text-center transition-all ${
+                  className={`border-2 border-dashed rounded-2xl p-6 sm:p-8 text-center transition-all ${
                     isDragging
                       ? 'border-indigo-600 bg-indigo-50/70 dark:bg-indigo-950/40'
                       : 'border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50 hover:bg-slate-100/50 dark:hover:bg-slate-800/40'
@@ -992,21 +1040,22 @@ export const NewComplaintPage: React.FC = () => {
                 >
                   <input
                     type="file"
+                    multiple
                     ref={fileInputRef}
                     onChange={handleFileInputChange}
                     accept="image/jpeg,image/png,image/webp"
                     className="hidden"
                   />
 
-                  <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-2xs">
-                    <UploadCloud className="w-7 h-7" />
+                  <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-2xs">
+                    <UploadCloud className="w-6 h-6" />
                   </div>
 
                   <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                    Drag and drop your complaint photo here
+                    Drag and drop complaint photos here, or browse files
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
-                    Supported formats: <strong className="font-semibold text-slate-700 dark:text-slate-300">JPG, PNG, or WebP</strong> (Max {settingsLimitMB}MB)
+                    Supported formats: <strong className="font-semibold text-slate-700 dark:text-slate-300">JPG, PNG, or WebP</strong> (Max {settingsLimitMB}MB per file, up to {maxAttachments} total)
                   </p>
 
                   <div className="mt-4">
@@ -1021,64 +1070,82 @@ export const NewComplaintPage: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  <div className="relative rounded-2xl overflow-hidden border border-slate-200/80 dark:border-slate-800 bg-slate-950 text-white max-h-80 flex items-center justify-center group">
-                    <img
-                      src={imagePreview}
-                      alt="Complaint attachment preview"
-                      className="max-h-80 w-auto object-contain mx-auto"
-                    />
-
-                    {/* Overlay controls */}
-                    <div className="absolute top-3 right-3 flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleRemoveImage}
-                        className="p-2 rounded-xl bg-rose-600/90 hover:bg-rose-600 text-white shadow-md backdrop-blur-xs transition-colors"
-                        title="Remove image"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-3 text-xs flex items-center justify-between">
-                      <span className="truncate max-w-xs">{imageFile?.name || 'Uploaded photo'}</span>
-                      <span className="text-[11px] text-slate-300">
-                        {imageFile ? `${(imageFile.size / 1024).toFixed(1)} KB` : ''}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between text-xs text-slate-500 px-1">
-                    <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-medium">
-                      <CheckCircle2 className="w-4 h-4" />
-                      Image successfully attached
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleRemoveImage}
-                      className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs"
-                    >
-                      Remove & Choose Another
-                    </Button>
+                <div className="p-4 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 flex items-center gap-3 text-xs text-amber-800 dark:text-amber-200">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                  <div>
+                    <span className="font-semibold block">Maximum Attachments Reached</span>
+                    <span>You have attached the maximum allowable {maxAttachments} photos for a single complaint. Remove an attachment below to add a different image.</span>
                   </div>
                 </div>
               )}
 
               {/* Error Alert */}
-              {imageError && (
+              {attachmentError && (
                 <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 flex items-center gap-2 text-xs text-rose-700 dark:text-rose-300">
                   <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
-                  <span>{imageError}</span>
+                  <span>{attachmentError}</span>
+                </div>
+              )}
+
+              {/* Attached Photos Preview Grid */}
+              {attachments.length > 0 && (
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    <span>Attached Photos ({attachments.length} of {maxAttachments})</span>
+                    <button
+                      type="button"
+                      onClick={() => setAttachments([])}
+                      className="text-rose-600 hover:text-rose-700 text-[11px] font-medium"
+                    >
+                      Clear All
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                    {attachments.map((att) => (
+                      <div
+                        key={att.id}
+                        className="relative group rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-900 shadow-xs"
+                      >
+                        <div className="h-36 w-full flex items-center justify-center bg-black/40">
+                          <img
+                            src={att.dataUrl}
+                            alt={att.name}
+                            className="max-h-36 w-full object-cover"
+                          />
+                        </div>
+
+                        {/* Remove button */}
+                        <div className="absolute top-2 right-2">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveAttachment(att.id)}
+                            className="p-1.5 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-white shadow-md transition-colors"
+                            title={`Remove ${att.name}`}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* File info footer */}
+                        <div className="p-2.5 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 text-xs flex items-center justify-between">
+                          <span className="truncate max-w-[140px] font-medium text-slate-800 dark:text-slate-200" title={att.name}>
+                            {att.name}
+                          </span>
+                          <span className="text-[10px] text-slate-400 shrink-0">
+                            {att.sizeFormatted}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
               <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800 flex items-start gap-2.5 text-xs text-slate-500">
                 <Info className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
                 <p>
-                  Images are optional but strongly recommended for damaged furniture, water leaks, and electrical burn marks. You may proceed without an image.
+                  Images are optional but strongly recommended for damaged fixtures, water leaks, and safety hazards. Maximum {maxAttachments} photos, up to {settingsLimitMB}MB each.
                 </p>
               </div>
             </CardContent>
@@ -1218,7 +1285,7 @@ export const NewComplaintPage: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                     <ImageIcon className="w-3.5 h-3.5" />
-                    Image Proof
+                    Image Proof ({attachments.length})
                   </span>
                   <button
                     type="button"
@@ -1230,24 +1297,31 @@ export const NewComplaintPage: React.FC = () => {
                   </button>
                 </div>
 
-                {imagePreview ? (
-                  <div className="flex items-center gap-4">
-                    <img
-                      src={imagePreview}
-                      alt="Thumbnail"
-                      className="w-20 h-20 object-cover rounded-xl border border-slate-200 dark:border-slate-700"
-                    />
-                    <div className="space-y-1 text-xs">
-                      <p className="font-medium text-slate-800 dark:text-slate-200 truncate max-w-xs">
-                        {imageFile?.name || 'Uploaded photo'}
-                      </p>
-                      <p className="text-[11px] text-slate-400">
-                        {imageFile ? `${(imageFile.size / 1024).toFixed(1)} KB` : ''}
-                      </p>
-                    </div>
+                {attachments.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {attachments.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center gap-3 p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50"
+                      >
+                        <img
+                          src={item.dataUrl}
+                          alt={item.name}
+                          className="w-14 h-14 object-cover rounded-lg border border-slate-200 dark:border-slate-700 flex-shrink-0"
+                        />
+                        <div className="min-w-0 flex-1 text-xs">
+                          <p className="font-medium text-slate-800 dark:text-slate-200 truncate">
+                            {item.name}
+                          </p>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            {item.sizeFormatted}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-400 italic">No image attached.</p>
+                  <p className="text-xs text-slate-400 italic">No image attachments provided.</p>
                 )}
               </div>
 

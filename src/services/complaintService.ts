@@ -162,7 +162,7 @@ class ComplaintService {
     const maxAttachments = settings.maxAttachmentsPerComplaint ?? 3;
     if (data.attachments && data.attachments.length > maxAttachments) {
       throw new Error(
-        `Maximum of ${maxAttachments} attachment(s) allowed per complaint. Received ${data.attachments.length}.`
+        `Maximum ${maxAttachments} attachments allowed per complaint. Received ${data.attachments.length}.`
       );
     }
 
@@ -210,31 +210,40 @@ class ComplaintService {
 
     if (settings.autoAssignComplaints) {
       const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
-      const activePersonnel = users.filter(
-        (u) => (u.role === 'staff' || u.role === 'admin') && (u.status || 'active') === 'active'
+      // Only select active personnel whose role is staff
+      const activeStaff = users.filter(
+        (u) => u.role === 'staff' && (u.status || 'active') === 'active'
       );
 
-      const catLower = (data.category || '').toLowerCase();
-      let handler = activePersonnel.find((p) => {
-        const deptLower = (p.department || '').toLowerCase();
-        if (catLower.includes('electric') && deptLower.includes('electric')) return true;
-        if (catLower.includes('plumb') && deptLower.includes('plumb')) return true;
+      const catLower = (data.category || '').toLowerCase().trim();
+      const isDepartmentMatch = (deptName?: string): boolean => {
+        if (!deptName) return false;
+        const d = deptName.toLowerCase().trim();
+        if (catLower.includes('electric') && d.includes('electric')) return true;
+        if (catLower.includes('plumb') && d.includes('plumb')) return true;
         if (
-          (catLower.includes('wifi') || catLower.includes('internet')) &&
-          (deptLower.includes('it') || deptLower.includes('support') || deptLower.includes('network'))
+          (catLower.includes('wifi') || catLower.includes('internet') || catLower === 'it' || catLower.includes('network')) &&
+          (d.includes('it') || d.includes('support') || d.includes('network'))
         ) {
           return true;
         }
-        if (catLower.includes('clean') && (deptLower.includes('housekeeping') || deptLower.includes('clean'))) {
+        if (
+          (catLower.includes('clean') || catLower.includes('sanitat') || catLower.includes('hygiene')) &&
+          (d.includes('housekeeping') || d.includes('clean') || d.includes('sanitat'))
+        ) {
           return true;
         }
-        if (catLower.includes('furn') && deptLower.includes('maintenance')) return true;
+        if (
+          (catLower.includes('furn') || catLower.includes('infra') || catLower.includes('maintenance')) &&
+          (d.includes('maintenance') || d.includes('infra'))
+        ) {
+          return true;
+        }
+        if (catLower === d) return true;
         return false;
-      });
+      };
 
-      if (!handler) {
-        handler = activePersonnel.find((p) => p.role === 'staff') || activePersonnel.find((p) => p.role === 'admin');
-      }
+      const handler = activeStaff.find((p) => isDepartmentMatch(p.department));
 
       if (handler) {
         assignedTo = handler.id;
@@ -243,7 +252,12 @@ class ComplaintService {
         initialStatus = 'assigned';
         initialTimelineMessage = `Complaint submitted by student and automatically assigned to ${handler.name} (${handler.department || 'Staff'}).`;
       } else {
-        initialTimelineMessage = 'Complaint submitted by student (auto-assignment pending: no active technician currently available).';
+        // Leave unassigned and in pending status when no matching personnel is available
+        assignedTo = undefined;
+        assignedStaffName = undefined;
+        assignedDepartment = undefined;
+        initialStatus = 'pending';
+        initialTimelineMessage = 'Complaint submitted by student (unassigned: no matching active department personnel available).';
       }
     }
 

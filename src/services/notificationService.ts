@@ -29,6 +29,18 @@ export const normalizeDepartment = (dept?: string): string => {
 };
 
 /**
+ * Essential security and critical account categories that must always reach students,
+ * even when routine student notifications are disabled by administrative policy.
+ */
+export const ESSENTIAL_STUDENT_CATEGORIES = new Set([
+  'security_alert',
+  'account_security',
+  'account_alert',
+  'credential_update',
+  'session_security',
+]);
+
+/**
  * Notification Service
  * Manages fetching, marking as read, unread counts, and administrative broadcast notifications.
  */
@@ -169,18 +181,30 @@ class NotificationService {
     this.ensureInitialized();
     const settings = settingsService.getSettingsSync();
 
-    // Check studentNotifications policy: if false, suppress routine student notifications
-    if (!settings.studentNotifications) {
-      const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
-      const recipient = users.find((u) => u.id === data.userId);
-      const isStudentRecipient =
-        data.userId === 'all_students' ||
-        data.userId === 'all' ||
-        recipient?.role === 'student' ||
-        (!recipient && data.userId !== 'admin' && data.userId !== 'user-admin-1');
+    const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
+    const recipient = users.find((u) => u.id === data.userId);
+    const isStudentRecipient =
+      data.userId === 'all_students' ||
+      data.userId === 'all' ||
+      recipient?.role === 'student' ||
+      (!recipient && data.userId !== 'admin' && data.userId !== 'user-admin-1');
 
-      if (isStudentRecipient && data.type !== 'error' && data.category !== 'security_alert') {
-        // Return suppressed notification object without saving to user's storage
+    // Security Rule: Internal admin notes must never be dispatched to students
+    if (isStudentRecipient && ((data as any).isInternal || data.category === 'internal_note')) {
+      return {
+        ...data,
+        id: `suppressed-${Date.now()}`,
+        read: true,
+        createdAt: new Date().toISOString(),
+      };
+    }
+
+    // Policy Rule: When studentNotifications is disabled, suppress all routine student notifications
+    // (complaint status, rejections, assignments, and announcements) while strictly preserving
+    // essential security/account alerts and all administrative notifications.
+    if (!settings.studentNotifications && isStudentRecipient) {
+      const isEssential = data.category ? ESSENTIAL_STUDENT_CATEGORIES.has(data.category) : false;
+      if (!isEssential) {
         return {
           ...data,
           id: `suppressed-${Date.now()}`,
