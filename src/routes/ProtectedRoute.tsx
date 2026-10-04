@@ -61,19 +61,19 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ requiredRole }) 
   }
 
   // 2. Role-based protection:
-  // Students attempting /admin/* should be redirected to /student/dashboard
-  if (requiredRole === 'admin' && liveUser?.role !== 'admin') {
+  if (requiredRole && liveUser?.role !== requiredRole) {
+    if (liveUser?.role === 'admin') {
+      return <Navigate to="/admin/dashboard" replace />;
+    }
+    if (liveUser?.role === 'staff') {
+      return <Navigate to="/staff/dashboard" replace />;
+    }
     return <Navigate to="/student/dashboard" replace />;
   }
 
-  // Admins attempting /student/* should be redirected to /admin/dashboard
-  if (requiredRole === 'student' && liveUser?.role === 'admin') {
-    return <Navigate to="/admin/dashboard" replace />;
-  }
-
-  // 3. Maintenance Mode: Restrict student-facing access while preserving administrator access
+  // 3. Maintenance Mode: Restrict student-facing access while preserving administrator & staff access
   const isMaintenance = settingsService.getSettingsSync().maintenanceMode;
-  if (isMaintenance && liveUser?.role !== 'admin') {
+  if (isMaintenance && liveUser?.role !== 'admin' && liveUser?.role !== 'staff') {
     return <MaintenancePage />;
   }
 

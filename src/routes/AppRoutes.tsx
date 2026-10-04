@@ -4,6 +4,7 @@ import { Routes, Route, Navigate, Link } from 'react-router-dom';
 // Layouts
 import { PublicLayout } from '@/layouts/PublicLayout';
 import { StudentLayout } from '@/layouts/StudentLayout';
+import { StaffLayout } from '@/layouts/StaffLayout';
 import { AdminLayout } from '@/layouts/AdminLayout';
 
 // Guard
@@ -23,6 +24,13 @@ import { NewComplaintPage } from '@/pages/student/NewComplaintPage';
 import { ComplaintDetailPage } from '@/pages/student/ComplaintDetailPage';
 import { StudentNotificationsPage } from '@/pages/student/StudentNotificationsPage';
 import { StudentProfilePage } from '@/pages/student/StudentProfilePage';
+
+// Staff Pages
+import { StaffDashboardPage } from '@/pages/staff/StaffDashboardPage';
+import { StaffComplaintsPage } from '@/pages/staff/StaffComplaintsPage';
+import { StaffComplaintDetailPage } from '@/pages/staff/StaffComplaintDetailPage';
+import { StaffNotificationsPage } from '@/pages/staff/StaffNotificationsPage';
+import { StaffProfilePage } from '@/pages/staff/StaffProfilePage';
 
 // Admin Pages
 import { AdminDashboardPage } from '@/pages/admin/AdminDashboardPage';
@@ -59,6 +67,18 @@ export const AppRoutes: React.FC = () => {
           <Route path="complaints/:id" element={<ComplaintDetailPage />} />
           <Route path="notifications" element={<StudentNotificationsPage />} />
           <Route path="profile" element={<StudentProfilePage />} />
+        </Route>
+      </Route>
+
+      {/* Protected Staff Routes */}
+      <Route element={<ProtectedRoute requiredRole="staff" />}>
+        <Route path="/staff" element={<StaffLayout />}>
+          <Route index element={<Navigate to="/staff/dashboard" replace />} />
+          <Route path="dashboard" element={<StaffDashboardPage />} />
+          <Route path="complaints" element={<StaffComplaintsPage />} />
+          <Route path="complaints/:id" element={<StaffComplaintDetailPage />} />
+          <Route path="notifications" element={<StaffNotificationsPage />} />
+          <Route path="profile" element={<StaffProfilePage />} />
         </Route>
       </Route>
 

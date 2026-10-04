@@ -29,6 +29,7 @@ import {
   Badge,
   SkeletonLoader,
   EmptyState,
+  StatCard,
 } from '@/components/common';
 import { StatusDonutChart } from '@/components/charts';
 import { useAuth } from '@/hooks/useAuth';
@@ -162,7 +163,7 @@ export const StudentDashboardPage: React.FC = () => {
           <div className="space-y-2">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 text-white/95 text-xs font-medium backdrop-blur-xs">
               <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>Campus Maintenance Portal • Phase 3</span>
+              <span>Smart College Complaint Portal • Active Service</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
               Welcome back, {user?.name || 'Student'}!
@@ -222,83 +223,47 @@ export const StudentDashboardPage: React.FC = () => {
 
       {/* Dynamic KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Complaints */}
-        <Card hoverEffect className="border-slate-200/80 dark:border-slate-800">
-          <CardContent className="p-4 sm:p-5 flex items-center justify-between">
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Total Complaints
-              </p>
-              <div className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-slate-100">
-                {loading ? <SkeletonLoader height="1.75rem" width="3rem" /> : stats.total}
-              </div>
-              <p className="text-[11px] text-slate-400">All submitted requests</p>
-            </div>
-            <div className="w-11 h-11 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center shadow-xs">
-              <FileText className="w-5 h-5" />
-            </div>
-          </CardContent>
-        </Card>
+        <StatCard
+          title="Total Complaints"
+          value={loading ? <SkeletonLoader height="1.75rem" width="3rem" /> : stats.total}
+          subtitle="All submitted requests"
+          icon={<FileText className="w-5 h-5" />}
+          variant="default"
+        />
 
-        {/* Pending Review */}
-        <Card hoverEffect className="border-amber-200/60 dark:border-amber-900/40">
-          <CardContent className="p-4 sm:p-5 flex items-center justify-between">
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
-                Pending Review
-              </p>
-              <div className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-slate-100">
-                {loading ? <SkeletonLoader height="1.75rem" width="3rem" /> : stats.pending}
-              </div>
-              <p className="text-[11px] text-slate-400">Awaiting department triage</p>
-            </div>
-            <div className="w-11 h-11 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shadow-xs">
-              <Clock className="w-5 h-5" />
-            </div>
-          </CardContent>
-        </Card>
+        <StatCard
+          title="Pending Review"
+          value={loading ? <SkeletonLoader height="1.75rem" width="3rem" /> : stats.pending}
+          subtitle="Awaiting department triage"
+          icon={<Clock className="w-5 h-5" />}
+          variant="amber"
+        />
 
-        {/* In Progress */}
-        <Card hoverEffect className="border-blue-200/60 dark:border-blue-900/40">
-          <CardContent className="p-4 sm:p-5 flex items-center justify-between">
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-blue-600 dark:text-blue-400">
-                In Progress
-              </p>
-              <div className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-slate-100">
-                {loading ? (
-                  <SkeletonLoader height="1.75rem" width="3rem" />
-                ) : (
-                  stats.inProgress + stats.assigned
-                )}
-              </div>
-              <p className="text-[11px] text-slate-400">
-                {stats.assigned > 0 ? `${stats.assigned} assigned, ${stats.inProgress} active` : 'Active maintenance'}
-              </p>
-            </div>
-            <div className="w-11 h-11 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shadow-xs">
-              <AlertCircle className="w-5 h-5" />
-            </div>
-          </CardContent>
-        </Card>
+        <StatCard
+          title="In Progress"
+          value={
+            loading ? (
+              <SkeletonLoader height="1.75rem" width="3rem" />
+            ) : (
+              stats.inProgress + stats.assigned
+            )
+          }
+          subtitle={
+            stats.assigned > 0
+              ? `${stats.assigned} assigned, ${stats.inProgress} active`
+              : 'Active maintenance'
+          }
+          icon={<AlertCircle className="w-5 h-5" />}
+          variant="blue"
+        />
 
-        {/* Resolved */}
-        <Card hoverEffect className="border-emerald-200/60 dark:border-emerald-900/40">
-          <CardContent className="p-4 sm:p-5 flex items-center justify-between">
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                Resolved
-              </p>
-              <div className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-slate-100">
-                {loading ? <SkeletonLoader height="1.75rem" width="3rem" /> : stats.resolved}
-              </div>
-              <p className="text-[11px] text-slate-400">Verified & closed tickets</p>
-            </div>
-            <div className="w-11 h-11 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-xs">
-              <CheckCircle2 className="w-5 h-5" />
-            </div>
-          </CardContent>
-        </Card>
+        <StatCard
+          title="Resolved"
+          value={loading ? <SkeletonLoader height="1.75rem" width="3rem" /> : stats.resolved}
+          subtitle="Verified & closed tickets"
+          icon={<CheckCircle2 className="w-5 h-5" />}
+          variant="emerald"
+        />
       </div>
 
       {/* Middle Row: Status Overview Donut Chart & Recent Activity Feed */}

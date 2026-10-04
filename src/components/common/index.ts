@@ -13,3 +13,5 @@ export * from './EmptyState';
 export * from './SkeletonLoader';
 export * from './Pagination';
 export * from './DemoModeIndicator';
+export * from './StatCard';
+export * from './Table';

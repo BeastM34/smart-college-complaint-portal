@@ -1,7 +1,9 @@
-import type { User, Role } from '@/types';
+import type { User, Role, SafeUser } from '@/types';
 import { STORAGE_KEYS, getStorageItem, setStorageItem, removeStorageItem } from '@/utils/storage';
 import { MOCK_USERS } from '@/data/mockData';
 import { authService } from './authService';
+
+export type { SafeUser };
 
 export interface UserFilterOptions {
   search?: string;
@@ -26,55 +28,86 @@ class UserService {
     }
   }
 
-  public async getUsers(filter?: UserFilterOptions): Promise<User[]> {
-    this.ensureInitialized();
-    let users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS).map((u) => ({
-      ...u,
-      status: u.status || 'active',
-    }));
-
-    if (!filter) return users;
-
-    if (filter.role && filter.role !== 'all') {
-      users = users.filter((u) => u.role === filter.role);
-    }
-
-    if (filter.status && filter.status !== 'all') {
-      users = users.filter((u) => (u.status || 'active') === filter.status);
-    }
-
-    if (filter.department && filter.department !== 'all') {
-      users = users.filter(
-        (u) => u.department && u.department.toLowerCase() === filter.department?.toLowerCase()
-      );
-    }
-
-    if (filter.search && filter.search.trim() !== '') {
-      const q = filter.search.toLowerCase().trim();
-      users = users.filter(
-        (u) =>
-          u.name.toLowerCase().includes(q) ||
-          u.email.toLowerCase().includes(q) ||
-          (u.studentId && u.studentId.toLowerCase().includes(q)) ||
-          (u.department && u.department.toLowerCase().includes(q))
-      );
-    }
-
-    return users;
-  }
-
-  public async getUserById(id: string): Promise<User | null> {
-    this.ensureInitialized();
-    const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
-    const user = users.find((u) => u.id === id || u.studentId === id || u.email === id);
-    if (!user) return null;
+  /**
+   * Projects a raw user record into a safe user model with password strictly omitted.
+   */
+  public toSafeUser(user: User): SafeUser {
+    const { password: _, ...safe } = user;
     return {
-      ...user,
-      status: user.status || 'active',
+      ...safe,
+      status: safe.status || 'active',
     };
   }
 
-  public async toggleUserStatus(id: string): Promise<User> {
+  public async getUsers(filter?: UserFilterOptions): Promise<SafeUser[]> {
+    this.ensureInitialized();
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Unauthorized: Only administrators are permitted to view the user directory.');
+    }
+
+    let users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
+
+    if (filter) {
+      if (filter.role && filter.role !== 'all') {
+        users = users.filter((u) => u.role === filter.role);
+      }
+
+      if (filter.status && filter.status !== 'all') {
+        users = users.filter((u) => (u.status || 'active') === filter.status);
+      }
+
+      if (filter.department && filter.department !== 'all') {
+        users = users.filter(
+          (u) => u.department && u.department.toLowerCase() === filter.department?.toLowerCase()
+        );
+      }
+
+      if (filter.search && filter.search.trim() !== '') {
+        const q = filter.search.toLowerCase().trim();
+        users = users.filter(
+          (u) =>
+            u.name.toLowerCase().includes(q) ||
+            u.email.toLowerCase().includes(q) ||
+            (u.studentId && u.studentId.toLowerCase().includes(q)) ||
+            (u.department && u.department.toLowerCase().includes(q))
+        );
+      }
+    }
+
+    return users.map((u) => this.toSafeUser(u));
+  }
+
+  public async getUserById(id: string): Promise<SafeUser | null> {
+    this.ensureInitialized();
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('Unauthorized: An authenticated session is required to retrieve user details.');
+    }
+
+    if (currentUser.role !== 'admin') {
+      const isSelf =
+        currentUser.id === id ||
+        currentUser.email.toLowerCase() === id.toLowerCase() ||
+        (currentUser.studentId && currentUser.studentId.toLowerCase() === id.toLowerCase());
+
+      if (!isSelf) {
+        throw new Error('Unauthorized: You can only access your own user profile.');
+      }
+    }
+
+    const users = getStorageItem<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
+    const user = users.find(
+      (u) =>
+        u.id === id ||
+        (u.studentId && u.studentId.toLowerCase() === id.toLowerCase()) ||
+        u.email.toLowerCase() === id.toLowerCase()
+    );
+    if (!user) return null;
+    return this.toSafeUser(user);
+  }
+
+    public async toggleUserStatus(id: string): Promise<SafeUser> {
     this.ensureInitialized();
     const currentUser = authService.getCurrentUser();
     if (!currentUser || currentUser.role !== 'admin') {
@@ -127,10 +160,10 @@ class UserService {
       }
     }
 
-    return updatedUser;
+    return this.toSafeUser(updatedUser);
   }
 
-  public async updateUserRole(id: string, role: Role): Promise<User> {
+  public async updateUserRole(id: string, role: Role): Promise<SafeUser> {
     this.ensureInitialized();
     const currentUser = authService.getCurrentUser();
     if (!currentUser || currentUser.role !== 'admin') {
@@ -173,10 +206,10 @@ class UserService {
       setStorageItem(STORAGE_KEYS.SESSION, updatedUser);
     }
 
-    return updatedUser;
+    return this.toSafeUser(updatedUser);
   }
 
-  public async updateProfile(id: string, data: Partial<User>): Promise<User> {
+  public async updateProfile(id: string, data: Partial<User>): Promise<SafeUser> {
     this.ensureInitialized();
     const currentUser = authService.getCurrentUser();
     if (!currentUser) {
@@ -202,7 +235,12 @@ class UserService {
       delete sanitizedData.email;
     }
 
-    const updatedUser = { ...users[index], ...sanitizedData };
+    const currentPassword = users[index].password;
+    const updatedUser: User = { ...users[index], ...sanitizedData };
+    if (!sanitizedData.password) {
+      updatedUser.password = currentPassword;
+    }
+
     users[index] = updatedUser;
     setStorageItem(STORAGE_KEYS.USERS, users);
 
@@ -212,10 +250,10 @@ class UserService {
       setStorageItem(STORAGE_KEYS.SESSION, updatedUser);
     }
 
-    return updatedUser;
+    return this.toSafeUser(updatedUser);
   }
 
-  public async updateUser(id: string, data: Partial<User>): Promise<User> {
+  public async updateUser(id: string, data: Partial<User>): Promise<SafeUser> {
     return this.updateProfile(id, data);
   }
 }

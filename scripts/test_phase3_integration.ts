@@ -4,6 +4,7 @@ import { userService } from '../src/services/userService';
 import { categoryService } from '../src/services/categoryService';
 import { notificationService } from '../src/services/notificationService';
 import { settingsService } from '../src/services/settingsService';
+import { analyticsService } from '../src/services/analyticsService';
 import { clearAppStorage, STORAGE_KEYS, setStorageItem, getStorageItem } from '../src/utils/storage';
 import { MOCK_USERS, MOCK_COMPLAINTS, MOCK_SETTINGS, MOCK_CATEGORIES } from '../src/data/mockData';
 
@@ -184,9 +185,10 @@ async function runAllTests() {
 
   await runTest('Student Workflow', 'Student cannot create internal notes or comment on other students complaints', async () => {
     const studentUser = authService.getCurrentUser()!;
-    const complaints = await complaintService.getComplaints();
-    const myComplaint = complaints.find((c) => c.studentId === studentUser.id)!;
-    const otherComplaint = complaints.find((c) => c.studentId !== studentUser.id)!;
+    const myComplaints = await complaintService.getStudentComplaints(studentUser.id);
+    const myComplaint = myComplaints[0];
+    const allComplaints = getStorageItem<any[]>(STORAGE_KEYS.COMPLAINTS, []);
+    const otherComplaint = allComplaints.find((c) => c.studentId !== studentUser.id)!;
 
     let internalRejected = false;
     try {
@@ -207,8 +209,8 @@ async function runAllTests() {
 
   await runTest('Student Workflow', 'Student cannot directly modify complaint status', async () => {
     const studentUser = authService.getCurrentUser()!;
-    const complaints = await complaintService.getComplaints();
-    const myComplaint = complaints.find((c) => c.studentId === studentUser.id)!;
+    const myComplaints = await complaintService.getStudentComplaints(studentUser.id);
+    const myComplaint = myComplaints[0];
 
     let rejected = false;
     try {
@@ -221,8 +223,8 @@ async function runAllTests() {
 
   await runTest('Student Workflow', 'Student can reopen resolved complaint, but cannot reopen in_progress complaint', async () => {
     const studentUser = authService.getCurrentUser()!;
-    const complaints = await complaintService.getComplaints();
-    const myComplaint = complaints.find((c) => c.studentId === studentUser.id)!;
+    const myComplaints = await complaintService.getStudentComplaints(studentUser.id);
+    const myComplaint = myComplaints[0];
 
     // Currently in_progress (set by admin earlier)
     let inProgressReopenRejected = false;
@@ -346,8 +348,8 @@ async function runAllTests() {
   });
 
   await runTest('Staff Workflow', 'Staff member cannot update unassigned complaint or complaint assigned to other staff', async () => {
-    const complaints = await complaintService.getComplaints();
-    const otherComplaint = complaints.find((c) => c.assignedTo !== 'staff-1')!;
+    const allComplaints = getStorageItem<any[]>(STORAGE_KEYS.COMPLAINTS, []);
+    const otherComplaint = allComplaints.find((c) => c.assignedTo !== 'staff-1')!;
 
     let rejected = false;
     try {
@@ -801,6 +803,475 @@ async function runAllTests() {
         assert(userIds.has(c.assignedTo), `Complaint ${c.ticketNumber} assignedTo ${c.assignedTo} must exist in users`);
       }
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // 6. ROLE AUTHORIZATION, DATA ACCESS & SECURITY ISOLATION (PHASE 3.1)
+  // -------------------------------------------------------------------------
+  console.log('\n--- 6. Testing Role Authorization, Data Access & Security Isolation ---');
+
+  // A. Student Isolation Tests
+  await runTest('Role Authorization: Student', 'Authenticated student cannot query complaints of another student by ID or email', async () => {
+    await authService.login('priya.sharma@college.edu', 'password123');
+    let rejectedById = false;
+    try {
+      await complaintService.getStudentComplaints('user-student-1');
+    } catch (e: any) {
+      rejectedById = e.message.includes('Unauthorized');
+    }
+    assert(rejectedById, 'Student querying another student by ID must throw Unauthorized');
+
+    let rejectedByEmail = false;
+    try {
+      await complaintService.getStudentComplaints('student@college.edu');
+    } catch (e: any) {
+      rejectedByEmail = e.message.includes('Unauthorized');
+    }
+    assert(rejectedByEmail, 'Student querying another student by email must throw Unauthorized');
+  });
+
+  await runTest('Role Authorization: Student', 'Authenticated student cannot retrieve another students complaint details via getComplaintById', async () => {
+    await authService.login('priya.sharma@college.edu', 'password123');
+    let rejected = false;
+    try {
+      await complaintService.getComplaintById('cmp-1001');
+    } catch (e: any) {
+      rejected = e.message.includes('Unauthorized');
+    }
+    assert(rejected, 'Student viewing another student complaint details must throw Unauthorized');
+  });
+
+  await runTest('Role Authorization: Student', 'Authenticated student cannot retrieve global complaint list via getComplaints', async () => {
+    await authService.login('priya.sharma@college.edu', 'password123');
+    let rejected = false;
+    try {
+      await complaintService.getComplaints();
+    } catch (e: any) {
+      rejected = e.message.includes('Unauthorized');
+    }
+    assert(rejected, 'Student calling getComplaints must throw Unauthorized');
+  });
+
+  await runTest('Role Authorization: Student', 'Authenticated student cannot retrieve another users profile via getUserById', async () => {
+    await authService.login('priya.sharma@college.edu', 'password123');
+    let rejected = false;
+    try {
+      await userService.getUserById('user-student-1');
+    } catch (e: any) {
+      rejected = e.message.includes('Unauthorized');
+    }
+    assert(rejected, 'Student retrieving another user profile must throw Unauthorized');
+  });
+
+  await runTest('Role Authorization: Student', 'Authenticated student cannot query global user directory via getUsers', async () => {
+    await authService.login('priya.sharma@college.edu', 'password123');
+    let rejected = false;
+    try {
+      await userService.getUsers();
+    } catch (e: any) {
+      rejected = e.message.includes('Unauthorized');
+    }
+    assert(rejected, 'Student querying getUsers directory must throw Unauthorized');
+  });
+
+  await runTest('Role Authorization: Student', 'Authenticated student cannot retrieve another users notifications', async () => {
+    await authService.login('priya.sharma@college.edu', 'password123');
+    let rejected = false;
+    try {
+      await notificationService.getNotifications('user-student-1');
+    } catch (e: any) {
+      rejected = e.message.includes('Unauthorized');
+    }
+    assert(rejected, 'Student retrieving another user notifications must throw Unauthorized');
+  });
+
+  await runTest('Role Authorization: Student', 'Authenticated student cannot mark or delete another users notifications', async () => {
+    await authService.login('priya.sharma@college.edu', 'password123');
+    let markRejected = false;
+    try {
+      // notif-1 belongs to user-student-1
+      await notificationService.markAsRead('notif-1');
+    } catch (e: any) {
+      markRejected = e.message.includes('Unauthorized');
+    }
+    assert(markRejected, 'Student marking another user notification as read must throw Unauthorized');
+
+    let deleteRejected = false;
+    try {
+      await notificationService.deleteNotification('notif-1');
+    } catch (e: any) {
+      deleteRejected = e.message.includes('Unauthorized');
+    }
+    assert(deleteRejected, 'Student deleting another user notification must throw Unauthorized');
+  });
+
+  await runTest('Role Authorization: Student', 'Authenticated student cannot query staff complaints via getStaffComplaints', async () => {
+    await authService.login('priya.sharma@college.edu', 'password123');
+    let rejected = false;
+    try {
+      await complaintService.getStaffComplaints('staff-1');
+    } catch (e: any) {
+      rejected = e.message.includes('Unauthorized');
+    }
+    assert(rejected, 'Student querying getStaffComplaints must throw Unauthorized');
+  });
+
+  await runTest('Role Authorization: Student', 'Authenticated student cannot rate satisfaction on another students complaint', async () => {
+    await authService.login('priya.sharma@college.edu', 'password123');
+    let rejected = false;
+    try {
+      // cmp-1004 belongs to user-student-1 and is resolved
+      await complaintService.rateSatisfaction('cmp-1004', 'satisfied', 'Sneaky rating');
+    } catch (e: any) {
+      rejected = e.message.includes('Unauthorized');
+    }
+    assert(rejected, 'Student rating satisfaction on another student complaint must throw Unauthorized');
+  });
+
+  // B. Staff Isolation Tests
+  await runTest('Role Authorization: Staff', 'Authenticated staff member cannot query complaints of another staff member', async () => {
+    await authService.login('ramesh.kumar@college.edu', 'staff123');
+    let rejected = false;
+    try {
+      await complaintService.getStaffComplaints('staff-2');
+    } catch (e: any) {
+      rejected = e.message.includes('Unauthorized');
+    }
+    assert(rejected, 'Staff querying another staff complaints must throw Unauthorized');
+  });
+
+  await runTest('Role Authorization: Staff', 'Authenticated staff member cannot retrieve unassigned complaints via staff query', async () => {
+    const staff = await authService.login('ramesh.kumar@college.edu', 'staff123');
+    const assignedComplaints = await complaintService.getStaffComplaints(staff.id);
+    assignedComplaints.forEach((c) => {
+      assert(Boolean(c.assignedTo), 'Staff query must never return unassigned complaints');
+      assert(c.assignedTo === staff.id, 'Staff query must only return complaints assigned to caller');
+    });
+  });
+
+  await runTest('Role Authorization: Staff', 'Authenticated staff member cannot retrieve another students complaints via student query', async () => {
+    await authService.login('ramesh.kumar@college.edu', 'staff123');
+    let rejected = false;
+    try {
+      await complaintService.getStudentComplaints('user-student-1');
+    } catch (e: any) {
+      rejected = e.message.includes('Unauthorized');
+    }
+    assert(rejected, 'Staff querying student complaints must throw Unauthorized');
+  });
+
+  await runTest('Role Authorization: Staff', 'Authenticated staff member cannot view internal notes in complaints assigned to them', async () => {
+    // Admin assigns complaint to staff-1 and creates an internal note
+    await authService.login('admin@college.edu', 'admin123');
+    const complaints = await complaintService.getComplaints();
+    const target = complaints[0];
+    await complaintService.assignComplaint(target.id, 'staff-1', 'Ramesh Kumar', 'Electrical');
+    await complaintService.addComment(target.id, 'Internal staff performance note', true);
+
+    // Staff-1 logs in and views complaint
+    await authService.login('ramesh.kumar@college.edu', 'staff123');
+    const staffView = await complaintService.getComplaintById(target.id, false);
+    assert(staffView !== null, 'Staff can view assigned complaint');
+    const hasInternalComment = staffView?.comments?.some((cm) => cm.isInternal);
+    const hasInternalTimeline = staffView?.timeline.some((tl) => tl.isInternal);
+    assert(!hasInternalComment, 'Internal comments must be redacted for staff');
+    assert(!hasInternalTimeline, 'Internal timeline events must be redacted for staff');
+  });
+
+  await runTest('Role Authorization: Staff', 'Authenticated staff member cannot retrieve admin analytics via getAdminStats or analyticsService', async () => {
+    await authService.login('ramesh.kumar@college.edu', 'staff123');
+    let statsRejected = false;
+    try {
+      await complaintService.getAdminStats();
+    } catch (e: any) {
+      statsRejected = e.message.includes('Unauthorized');
+    }
+    assert(statsRejected, 'Staff calling getAdminStats must throw Unauthorized');
+
+    let analyticsRejected = false;
+    try {
+      await analyticsService.getSummary();
+    } catch (e: any) {
+      analyticsRejected = e.message.includes('Unauthorized');
+    }
+    assert(analyticsRejected, 'Staff calling analyticsService.getSummary must throw Unauthorized');
+  });
+
+  await runTest('Role Authorization: Staff', 'Authenticated staff member cannot retrieve broadcast history via getBroadcastHistory', async () => {
+    await authService.login('ramesh.kumar@college.edu', 'staff123');
+    let rejected = false;
+    try {
+      await notificationService.getBroadcastHistory();
+    } catch (e: any) {
+      rejected = e.message.includes('Unauthorized');
+    }
+    assert(rejected, 'Staff calling getBroadcastHistory must throw Unauthorized');
+  });
+
+  // -------------------------------------------------------------------------
+  // B.1 Staff Strict Account ID Authorization & Display Name Decoupling (Phase 3.2)
+  // -------------------------------------------------------------------------
+  await runTest('Phase 3.2 Staff ID Decoupling', 'Setup controlled staff accounts with identical display names and test complaints', async () => {
+    await authService.login('admin@college.edu', 'admin123');
+
+    // Create/inject two staff accounts with identical display names
+    const users = getStorageItem<any[]>(STORAGE_KEYS.USERS, []);
+    const staffUserA = {
+      id: 'staff-test-a',
+      name: 'Common Technician',
+      email: 'staff.a@college.edu',
+      password: 'staff123',
+      role: 'staff',
+      department: 'Electrical',
+      status: 'active',
+      createdAt: new Date().toISOString(),
+    };
+    const staffUserB = {
+      id: 'staff-test-b',
+      name: 'Common Technician',
+      email: 'staff.b@college.edu',
+      password: 'staff123',
+      role: 'staff',
+      department: 'Electrical',
+      status: 'active',
+      createdAt: new Date().toISOString(),
+    };
+
+    setStorageItem(STORAGE_KEYS.USERS, [
+      ...users.filter((u: any) => u.id !== 'staff-test-a' && u.id !== 'staff-test-b'),
+      staffUserA,
+      staffUserB,
+    ]);
+
+    // Create test complaints
+    const complaints = getStorageItem<any[]>(STORAGE_KEYS.COMPLAINTS, []);
+    const timestamp = new Date().toISOString();
+    const complaintA = {
+      id: 'cmp-test-staff-a',
+      ticketNumber: 'CMP-STAFF-A',
+      title: 'Lighting issue in Room 101',
+      description: 'Ceiling light broken',
+      category: 'electrical',
+      priority: 'medium',
+      status: 'assigned',
+      studentId: 'user-student-1',
+      studentName: 'Alex Johnson',
+      studentEmail: 'student@college.edu',
+      assignedTo: 'staff-test-a',
+      assignedStaffName: 'Common Technician',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      timeline: [],
+    };
+    const complaintB = {
+      id: 'cmp-test-staff-b',
+      ticketNumber: 'CMP-STAFF-B',
+      title: 'Switchboard issue in Room 102',
+      description: 'Switchboard sparking',
+      category: 'electrical',
+      priority: 'high',
+      status: 'assigned',
+      studentId: 'user-student-1',
+      studentName: 'Alex Johnson',
+      studentEmail: 'student@college.edu',
+      assignedTo: 'staff-test-b',
+      assignedStaffName: 'Common Technician',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      timeline: [],
+    };
+    const legacyComplaint = {
+      id: 'cmp-test-legacy-name',
+      ticketNumber: 'CMP-LEGACY-NAME',
+      title: 'Unassigned corridor fan repair',
+      description: 'Old legacy complaint with display name only',
+      category: 'electrical',
+      priority: 'low',
+      status: 'pending',
+      studentId: 'user-student-1',
+      studentName: 'Alex Johnson',
+      studentEmail: 'student@college.edu',
+      assignedTo: undefined,
+      assignedStaffName: 'Common Technician',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      timeline: [],
+    };
+
+    setStorageItem(STORAGE_KEYS.COMPLAINTS, [
+      ...complaints.filter(
+        (c: any) =>
+          c.id !== 'cmp-test-staff-a' &&
+          c.id !== 'cmp-test-staff-b' &&
+          c.id !== 'cmp-test-legacy-name'
+      ),
+      complaintA,
+      complaintB,
+      legacyComplaint,
+    ]);
+  });
+
+  await runTest('Phase 3.2 Staff ID Decoupling', 'Staff A cannot retrieve Staff B complaints via getStaffComplaints despite identical display names', async () => {
+    await authService.login('staff.a@college.edu', 'staff123');
+    const staffComplaints = await complaintService.getStaffComplaints('staff-test-a');
+    const complaintIds = staffComplaints.map((c) => c.id);
+
+    assert(complaintIds.includes('cmp-test-staff-a'), 'Staff A can retrieve their own assigned complaint');
+    assert(!complaintIds.includes('cmp-test-staff-b'), 'Staff A must NOT retrieve Staff B complaint despite identical display name');
+    assert(!complaintIds.includes('cmp-test-legacy-name'), 'Staff A must NOT retrieve unassigned legacy complaint despite matching display name');
+  });
+
+  await runTest('Phase 3.2 Staff ID Decoupling', 'Staff A cannot access details of Staff B complaint via getComplaintById', async () => {
+    await authService.login('staff.a@college.edu', 'staff123');
+    let rejected = false;
+    try {
+      await complaintService.getComplaintById('cmp-test-staff-b');
+    } catch (e: any) {
+      rejected = e.message.includes('Unauthorized');
+    }
+    assert(rejected, 'Staff A must be rejected with Unauthorized when accessing Staff B complaint by ID');
+  });
+
+  await runTest('Phase 3.2 Staff ID Decoupling', 'Legacy complaint with only assignedStaffName and no valid assignedTo ID is inaccessible to staff', async () => {
+    await authService.login('staff.a@college.edu', 'staff123');
+    let rejected = false;
+    try {
+      await complaintService.getComplaintById('cmp-test-legacy-name');
+    } catch (e: any) {
+      rejected = e.message.includes('Unauthorized');
+    }
+    assert(rejected, 'Staff A must be rejected with Unauthorized for legacy unassigned complaint');
+  });
+
+  await runTest('Phase 3.2 Staff ID Decoupling', 'Correctly assigned staff member (Staff B) can access their complaint and not Staff A complaint', async () => {
+    await authService.login('staff.b@college.edu', 'staff123');
+    const staffBComplaints = await complaintService.getStaffComplaints('staff-test-b');
+    const ids = staffBComplaints.map((c) => c.id);
+
+    assert(ids.includes('cmp-test-staff-b'), 'Staff B can retrieve their assigned complaint');
+    assert(!ids.includes('cmp-test-staff-a'), 'Staff B cannot retrieve Staff A complaint');
+
+    const detailB = await complaintService.getComplaintById('cmp-test-staff-b');
+    assert(detailB !== null && detailB.id === 'cmp-test-staff-b', 'Staff B can view details of their assigned complaint');
+
+    let detailARejected = false;
+    try {
+      await complaintService.getComplaintById('cmp-test-staff-a');
+    } catch (e: any) {
+      detailARejected = e.message.includes('Unauthorized');
+    }
+    assert(detailARejected, 'Staff B must be rejected when viewing Staff A complaint details');
+  });
+
+  await runTest('Phase 3.2 Staff ID Decoupling', 'Administrators can view, filter, and reassign all relevant complaints', async () => {
+    await authService.login('admin@college.edu', 'admin123');
+    const all = await complaintService.getComplaints();
+    const idSet = new Set(all.map((c) => c.id));
+
+    assert(idSet.has('cmp-test-staff-a'), 'Admin sees complaint A');
+    assert(idSet.has('cmp-test-staff-b'), 'Admin sees complaint B');
+    assert(idSet.has('cmp-test-legacy-name'), 'Admin sees unassigned legacy complaint');
+
+    // Admin can filter by assigned staff display name
+    const filteredByName = await complaintService.getStaffComplaints('Common Technician');
+    assert(filteredByName.length >= 2, 'Admin can query complaints by staff display name');
+
+    // Admin reassigns the legacy complaint to Staff A
+    const reassigned = await complaintService.assignComplaint(
+      'cmp-test-legacy-name',
+      'staff-test-a',
+      'Common Technician',
+      'Electrical'
+    );
+    assert(reassigned.assignedTo === 'staff-test-a', 'Legacy complaint reassigned to Staff A');
+
+    // Now Staff A can access it
+    await authService.login('staff.a@college.edu', 'staff123');
+    const staffAComplaintsAfter = await complaintService.getStaffComplaints('staff-test-a');
+    assert(staffAComplaintsAfter.some((c) => c.id === 'cmp-test-legacy-name'), 'Staff A can now access reassigned complaint');
+  });
+
+  // C. Admin Access Tests
+  await runTest('Role Authorization: Admin', 'Authenticated admin can view all complaints', async () => {
+    await authService.login('admin@college.edu', 'admin123');
+    const all = await complaintService.getComplaints();
+    assert(Array.isArray(all) && all.length > 0, 'Admin can retrieve all complaints');
+  });
+
+  await runTest('Role Authorization: Admin', 'Authenticated admin can view full complaint details including internal notes', async () => {
+    await authService.login('admin@college.edu', 'admin123');
+    const all = await complaintService.getComplaints();
+    const target = all[0];
+    await complaintService.addComment(target.id, 'Admin-only internal verification note', true);
+
+    const adminView = await complaintService.getComplaintById(target.id, false);
+    assert(adminView !== null, 'Admin retrieved complaint');
+    const internalFound = adminView?.comments?.some((c) => c.isInternal && c.message.includes('Admin-only internal verification note'));
+    assert(Boolean(internalFound), 'Admin can view internal notes with filterInternal=false');
+  });
+
+  await runTest('Role Authorization: Admin', 'Authenticated admin can view full user list (safe users)', async () => {
+    await authService.login('admin@college.edu', 'admin123');
+    const users = await userService.getUsers();
+    assert(Array.isArray(users) && users.length >= 3, 'Admin retrieves complete user list');
+  });
+
+  await runTest('Role Authorization: Admin', 'Authenticated admin can view admin analytics and broadcast history', async () => {
+    await authService.login('admin@college.edu', 'admin123');
+    const stats = await complaintService.getAdminStats();
+    assert(typeof stats.total === 'number', 'Admin receives KPI stats');
+
+    const summary = await analyticsService.getSummary();
+    assert(typeof summary.totalComplaints === 'number', 'Admin receives analytics summary');
+
+    const history = await notificationService.getBroadcastHistory();
+    assert(Array.isArray(history), 'Admin receives broadcast history');
+
+    const activity = await complaintService.getAllRecentActivity(5);
+    assert(Array.isArray(activity), 'Admin receives all recent activity');
+  });
+
+  // D. Password Exposure Verification
+  await runTest('Password Security', 'userService.getUsers returns objects without password fields', async () => {
+    await authService.login('admin@college.edu', 'admin123');
+    const users = await userService.getUsers();
+    users.forEach((u: any) => {
+      assert(u.password === undefined, `User ${u.email} must not have password property`);
+    });
+  });
+
+  await runTest('Password Security', 'userService.getUserById returns objects without password fields', async () => {
+    await authService.login('admin@college.edu', 'admin123');
+    const user = (await userService.getUserById('user-admin-1')) as any;
+    assert(user !== null, 'User found');
+    assert(user.password === undefined, 'User returned by getUserById must not have password property');
+  });
+
+  await runTest('Password Security', 'userService user update methods return objects without password fields', async () => {
+    await authService.login('admin@college.edu', 'admin123');
+    const updated = (await userService.updateUser('user-student-2', { name: 'Priya Sharma Updated' })) as any;
+    assert(updated.password === undefined, 'updateUser must not return password');
+
+    const profileUpdated = (await userService.updateProfile('user-admin-1', { phone: '+1 555 111 2233' })) as any;
+    assert(profileUpdated.password === undefined, 'updateProfile must not return password');
+  });
+
+  await runTest('Password Security', 'Authentication still succeeds with valid credentials (passwords preserved internally)', async () => {
+    authService.invalidateSession();
+    const loggedIn = await authService.login('admin@college.edu', 'admin123');
+    assert(loggedIn.id === 'user-admin-1', 'Admin login succeeds using preserved credentials');
+
+    authService.invalidateSession();
+    const student = await authService.login('priya.sharma@college.edu', 'password123');
+    assert(student.email === 'priya.sharma@college.edu', 'Student login succeeds using preserved credentials');
+  });
+
+  // E. Test Data Hygiene
+  await runTest('Data Hygiene', 'Final demo data reset cleanly restores pristine state and session is invalidated', async () => {
+    await authService.login('admin@college.edu', 'admin123');
+    await settingsService.resetDemoData();
+    authService.invalidateSession();
+    assert(authService.getCurrentUser() === null, 'Session cleanly invalidated after test suite run');
   });
 
   // -------------------------------------------------------------------------

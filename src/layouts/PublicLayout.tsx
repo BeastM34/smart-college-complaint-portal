@@ -9,6 +9,18 @@ import { useAuth } from '@/hooks/useAuth';
 export const PublicLayout: React.FC = () => {
   const { user } = useAuth();
 
+  const getDashboardPath = (role?: string) => {
+    if (role === 'admin') return '/admin/dashboard';
+    if (role === 'staff') return '/staff/dashboard';
+    return '/student/dashboard';
+  };
+
+  const getPortalLabel = (role?: string) => {
+    if (role === 'admin') return 'Admin Console';
+    if (role === 'staff') return 'Staff Queue';
+    return 'Student Portal';
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
       {/* Top Navbar */}
@@ -33,9 +45,9 @@ export const PublicLayout: React.FC = () => {
             <ThemeToggle />
 
             {user ? (
-              <Link to={user.role === 'admin' ? '/admin/dashboard' : '/student/dashboard'}>
+              <Link to={getDashboardPath(user.role)}>
                 <Button size="sm" variant="primary" rightIcon={<ArrowRight className="w-3.5 h-3.5" />}>
-                  Go to {user.role === 'admin' ? 'Admin' : 'Student'} Portal
+                  Go to {getPortalLabel(user.role)}
                 </Button>
               </Link>
             ) : (
@@ -73,7 +85,7 @@ export const PublicLayout: React.FC = () => {
               Student Login
             </Link>
             <Link to="/login" className="hover:text-slate-900 dark:hover:text-slate-200 transition-colors">
-              Admin Portal
+              Staff & Admin Portal
             </Link>
             <span className="text-slate-300 dark:text-slate-700">|</span>
             <span>Helpline: +1 (800) 555-CAMPUS</span>

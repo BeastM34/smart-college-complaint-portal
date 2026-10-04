@@ -30,6 +30,8 @@ export interface User {
   createdAt: string;
 }
 
+export type SafeUser = Omit<User, 'password'>;
+
 export interface StaffMember {
   id: string;
   name: string;

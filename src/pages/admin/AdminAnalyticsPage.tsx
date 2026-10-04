@@ -29,7 +29,7 @@ export const AdminAnalyticsPage: React.FC = () => {
 
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800">
           <Info className="w-3.5 h-3.5" />
-          <span>Phase 1 Scaffolding Placeholder</span>
+          <span>Operational Metrics</span>
         </div>
       </div>
 

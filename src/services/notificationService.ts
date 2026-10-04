@@ -62,6 +62,20 @@ class NotificationService {
 
   public async getNotifications(userId: string): Promise<Notification[]> {
     this.ensureInitialized();
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('Unauthorized: An authenticated session is required to retrieve notifications.');
+    }
+
+    if (currentUser.role !== 'admin') {
+      const isSelf =
+        userId === currentUser.id ||
+        (currentUser.studentId && userId.toLowerCase() === currentUser.studentId.toLowerCase());
+      if (!isSelf) {
+        throw new Error('Unauthorized: You can only retrieve notifications for your own account.');
+      }
+    }
+
     const notifications = getStorageItem<Notification[]>(
       STORAGE_KEYS.NOTIFICATIONS,
       MOCK_NOTIFICATIONS
@@ -136,6 +150,11 @@ class NotificationService {
 
   public async markAsRead(id: string): Promise<Notification> {
     this.ensureInitialized();
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('Unauthorized: An authenticated session is required to mark notifications as read.');
+    }
+
     const notifications = getStorageItem<Notification[]>(
       STORAGE_KEYS.NOTIFICATIONS,
       MOCK_NOTIFICATIONS
@@ -146,6 +165,18 @@ class NotificationService {
       throw new Error(`Notification with ID ${id} not found`);
     }
 
+    const notif = notifications[index];
+    if (currentUser.role !== 'admin') {
+      const isOwner =
+        notif.userId === currentUser.id ||
+        notif.userId === 'all' ||
+        notif.userId === 'all_students' ||
+        (currentUser.studentId && notif.userId.toLowerCase() === currentUser.studentId.toLowerCase());
+      if (!isOwner) {
+        throw new Error('Unauthorized: You do not have permission to modify this notification.');
+      }
+    }
+
     notifications[index].read = true;
     setStorageItem(STORAGE_KEYS.NOTIFICATIONS, notifications);
     return notifications[index];
@@ -153,6 +184,20 @@ class NotificationService {
 
   public async markAllAsRead(userId: string): Promise<void> {
     this.ensureInitialized();
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('Unauthorized: An authenticated session is required to mark notifications as read.');
+    }
+
+    if (currentUser.role !== 'admin') {
+      const isSelf =
+        userId === currentUser.id ||
+        (currentUser.studentId && userId.toLowerCase() === currentUser.studentId.toLowerCase());
+      if (!isSelf) {
+        throw new Error('Unauthorized: You can only mark notifications for your own account.');
+      }
+    }
+
     const notifications = getStorageItem<Notification[]>(
       STORAGE_KEYS.NOTIFICATIONS,
       MOCK_NOTIFICATIONS
@@ -167,10 +212,29 @@ class NotificationService {
 
   public async deleteNotification(id: string): Promise<void> {
     this.ensureInitialized();
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('Unauthorized: An authenticated session is required to delete notifications.');
+    }
+
     const notifications = getStorageItem<Notification[]>(
       STORAGE_KEYS.NOTIFICATIONS,
       MOCK_NOTIFICATIONS
     );
+    const target = notifications.find((n) => n.id === id);
+    if (!target) {
+      return;
+    }
+
+    if (currentUser.role !== 'admin') {
+      const isOwner =
+        target.userId === currentUser.id ||
+        (currentUser.studentId && target.userId.toLowerCase() === currentUser.studentId.toLowerCase());
+      if (!isOwner) {
+        throw new Error('Unauthorized: You do not have permission to delete this notification.');
+      }
+    }
+
     const filtered = notifications.filter((n) => n.id !== id);
     setStorageItem(STORAGE_KEYS.NOTIFICATIONS, filtered);
   }
@@ -454,6 +518,10 @@ class NotificationService {
 
   public async getBroadcastHistory(): Promise<BroadcastNotification[]> {
     this.ensureInitialized();
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Unauthorized: Only administrators are permitted to view broadcast history.');
+    }
     return getStorageItem<BroadcastNotification[]>(
       STORAGE_KEYS.BROADCASTS,
       MOCK_BROADCASTS

@@ -13,6 +13,7 @@ import {
   GraduationCap,
   Shield,
   LifeBuoy,
+  Wrench,
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { useNotifications } from '@/hooks/useNotifications';
@@ -63,6 +64,30 @@ export const Sidebar: React.FC<SidebarProps> = ({ role, className, onItemClick }
     },
   ];
 
+  const staffNavItems: NavItemConfig[] = [
+    {
+      label: 'Dashboard',
+      path: '/staff/dashboard',
+      icon: <LayoutDashboard className="w-4 h-4" />,
+    },
+    {
+      label: 'Assigned Complaints',
+      path: '/staff/complaints',
+      icon: <FileText className="w-4 h-4" />,
+    },
+    {
+      label: 'Notifications',
+      path: '/staff/notifications',
+      icon: <Bell className="w-4 h-4" />,
+      badge: unreadCount > 0 ? unreadCount : undefined,
+    },
+    {
+      label: 'Profile',
+      path: '/staff/profile',
+      icon: <User className="w-4 h-4" />,
+    },
+  ];
+
   const adminNavItems: NavItemConfig[] = [
     {
       label: 'Dashboard',
@@ -102,7 +127,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ role, className, onItemClick }
     },
   ];
 
-  const items = role === 'admin' ? adminNavItems : studentNavItems;
+  const items =
+    role === 'admin' ? adminNavItems : role === 'staff' ? staffNavItems : studentNavItems;
+
+  const roleSubtitle =
+    role === 'admin'
+      ? 'Admin Workspace'
+      : role === 'staff'
+      ? 'Staff Technician'
+      : 'Student Portal';
 
   return (
     <aside
@@ -116,16 +149,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ role, className, onItemClick }
         <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-700 text-white shadow-md shadow-indigo-500/20">
           {role === 'admin' ? (
             <Shield className="w-5 h-5" />
+          ) : role === 'staff' ? (
+            <Wrench className="w-5 h-5" />
           ) : (
             <GraduationCap className="w-5 h-5" />
           )}
         </div>
         <div className="flex flex-col">
-          <Link to="/" className="text-sm font-bold tracking-tight text-slate-900 dark:text-slate-100 hover:text-indigo-600 transition-colors">
+          <Link
+            to="/"
+            className="text-sm font-bold tracking-tight text-slate-900 dark:text-slate-100 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+          >
             SmartCampus
           </Link>
-          <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
-            {role === 'admin' ? 'Admin Workspace' : 'Student Portal'}
+          <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+            {roleSubtitle}
           </span>
         </div>
       </div>
@@ -139,7 +177,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ role, className, onItemClick }
           <NavLink
             key={item.path}
             to={item.path}
-            end={item.path === '/student/dashboard' || item.path === '/admin/dashboard'}
+            end={
+              item.path === '/student/dashboard' ||
+              item.path === '/admin/dashboard' ||
+              item.path === '/staff/dashboard'
+            }
             onClick={onItemClick}
             className={({ isActive }) =>
               cn(
@@ -151,7 +193,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ role, className, onItemClick }
             }
           >
             <div className="flex items-center gap-3">
-              <span className="shrink-0 transition-colors group-hover:scale-105">
+              <span className="shrink-0 transition-transform duration-150 group-hover:scale-110">
                 {item.icon}
               </span>
               <span>{item.label}</span>

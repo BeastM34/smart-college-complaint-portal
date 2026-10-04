@@ -22,9 +22,17 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick, title }) => {
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
   const notificationsLink =
-    user?.role === 'admin' ? '/admin/notifications' : '/student/notifications';
+    user?.role === 'admin'
+      ? '/admin/notifications'
+      : user?.role === 'staff'
+      ? '/staff/notifications'
+      : '/student/notifications';
   const profileLink =
-    user?.role === 'admin' ? '/admin/settings' : '/student/profile';
+    user?.role === 'admin'
+      ? '/admin/settings'
+      : user?.role === 'staff'
+      ? '/staff/profile'
+      : '/student/profile';
 
   const handleLogoutConfirm = async () => {
     await logout();
@@ -39,7 +47,7 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick, title }) => {
           {onMenuClick && (
             <button
               onClick={onMenuClick}
-              className="lg:hidden p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800 transition-colors"
+              className="lg:hidden p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 cursor-pointer"
               aria-label="Open mobile navigation"
             >
               <Menu className="w-5 h-5" />
@@ -62,7 +70,7 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick, title }) => {
 
           <Link
             to={notificationsLink}
-            className="relative p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="relative p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             aria-label="Notifications"
           >
             <Bell className="w-4 h-4" />
@@ -78,7 +86,7 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick, title }) => {
             <Dropdown
               align="right"
               trigger={
-                <div className="flex items-center gap-2 pl-1 group cursor-pointer">
+                <div className="flex items-center gap-2 pl-1 group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded-lg p-1">
                   <Avatar
                     src={user.avatarUrl}
                     name={user.name}

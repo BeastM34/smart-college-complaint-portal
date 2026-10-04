@@ -46,9 +46,9 @@ export const HomePage: React.FC = () => {
         {/* Primary Action Buttons */}
         <div className="flex flex-wrap items-center justify-center gap-3.5 pt-2">
           {isAuthenticated && user ? (
-            <Link to={user.role === 'admin' ? '/admin/dashboard' : '/student/dashboard'}>
+            <Link to={user.role === 'admin' ? '/admin/dashboard' : user.role === 'staff' ? '/staff/dashboard' : '/student/dashboard'}>
               <Button size="lg" rightIcon={<ArrowRight className="w-4 h-4" />}>
-                Go to {user.role === 'admin' ? 'Admin Console' : 'Student Dashboard'}
+                Go to {user.role === 'admin' ? 'Admin Console' : user.role === 'staff' ? 'Staff Queue' : 'Student Dashboard'}
               </Button>
             </Link>
           ) : (

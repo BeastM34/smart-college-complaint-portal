@@ -2,6 +2,7 @@ import type { AnalyticsSummary } from '@/types';
 import { STORAGE_KEYS, getStorageItem } from '@/utils/storage';
 import { MOCK_ANALYTICS, MOCK_COMPLAINTS } from '@/data/mockData';
 import type { Complaint } from '@/types';
+import { authService } from './authService';
 
 /**
  * Analytics Service
@@ -9,6 +10,11 @@ import type { Complaint } from '@/types';
  */
 class AnalyticsService {
   public async getSummary(): Promise<AnalyticsSummary> {
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Unauthorized: Only administrators are permitted to retrieve analytics summary.');
+    }
+
     const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
 
     // Compute live metrics if complaints exist

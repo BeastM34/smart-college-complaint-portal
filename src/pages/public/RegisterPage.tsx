@@ -61,7 +61,13 @@ export const RegisterPage: React.FC = () => {
   // If already logged in, redirect to respective dashboard
   useEffect(() => {
     if (isAuthenticated && user) {
-      navigate(user.role === 'admin' ? '/admin/dashboard' : '/student/dashboard', { replace: true });
+      const dest =
+        user.role === 'admin'
+          ? '/admin/dashboard'
+          : user.role === 'staff'
+          ? '/staff/dashboard'
+          : '/student/dashboard';
+      navigate(dest, { replace: true });
     }
   }, [isAuthenticated, user, navigate]);
 

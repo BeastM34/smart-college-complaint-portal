@@ -24,6 +24,12 @@ export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const getRoleDestination = (role: string) => {
+    if (role === 'admin') return '/admin/dashboard';
+    if (role === 'staff') return '/staff/dashboard';
+    return '/student/dashboard';
+  };
+
   useEffect(() => {
     if (location.state?.registeredEmail) {
       setEmail(location.state.registeredEmail);
@@ -44,7 +50,7 @@ export const LoginPage: React.FC = () => {
     if (isAuthenticated && user && (user.status || 'active') !== 'inactive') {
       const live = authService.getLiveUser(user.id);
       if (live && (live.status || 'active') !== 'inactive') {
-        navigate(user.role === 'admin' ? '/admin/dashboard' : '/student/dashboard', { replace: true });
+        navigate(getRoleDestination(user.role), { replace: true });
       }
     }
   }, [isAuthenticated, user, navigate]);
@@ -67,7 +73,7 @@ export const LoginPage: React.FC = () => {
       const loggedUser = await login(email, password, rememberMe);
       success(`Welcome back, ${loggedUser.name}!`, 'Signed In');
       
-      const destination = location.state?.from?.pathname || (loggedUser.role === 'admin' ? '/admin/dashboard' : '/student/dashboard');
+      const destination = location.state?.from?.pathname || getRoleDestination(loggedUser.role);
       navigate(destination, { replace: true });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Invalid credentials. Please verify your email and password.';
@@ -87,7 +93,7 @@ export const LoginPage: React.FC = () => {
     try {
       const loggedUser = await login(demoEmail, demoPass, true);
       success(`Logged in as ${loggedUser.name} (${roleName})`, 'Demo Access');
-      navigate(loggedUser.role === 'admin' ? '/admin/dashboard' : '/student/dashboard', { replace: true });
+      navigate(getRoleDestination(loggedUser.role), { replace: true });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to authenticate demo user.';
       setErrorMessage(msg);
@@ -125,7 +131,7 @@ export const LoginPage: React.FC = () => {
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-3 gap-2">
             <Button
               type="button"
               variant="outline"
@@ -134,8 +140,20 @@ export const LoginPage: React.FC = () => {
               onClick={() => handleDemoLogin('student@college.edu', 'student123', 'Student')}
               className="bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800 hover:border-indigo-400 text-xs py-2 flex flex-col items-center justify-center h-auto gap-0.5"
             >
-              <span className="font-semibold text-indigo-950 dark:text-indigo-100">Demo Student</span>
-              <span className="text-[10px] text-slate-400 font-mono">student@college.edu</span>
+              <span className="font-semibold text-indigo-950 dark:text-indigo-100 text-[11px]">Student</span>
+              <span className="text-[9px] text-slate-400 font-mono truncate max-w-full">student@college</span>
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              isLoading={loading}
+              onClick={() => handleDemoLogin('staff@college.edu', 'staff123', 'Staff')}
+              className="bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800 hover:border-indigo-400 text-xs py-2 flex flex-col items-center justify-center h-auto gap-0.5"
+            >
+              <span className="font-semibold text-indigo-950 dark:text-indigo-100 text-[11px]">Staff</span>
+              <span className="text-[9px] text-slate-400 font-mono truncate max-w-full">staff@college</span>
             </Button>
 
             <Button
@@ -146,8 +164,8 @@ export const LoginPage: React.FC = () => {
               onClick={() => handleDemoLogin('admin@college.edu', 'admin123', 'Administrator')}
               className="bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800 hover:border-indigo-400 text-xs py-2 flex flex-col items-center justify-center h-auto gap-0.5"
             >
-              <span className="font-semibold text-indigo-950 dark:text-indigo-100">Demo Admin</span>
-              <span className="text-[10px] text-slate-400 font-mono">admin@college.edu</span>
+              <span className="font-semibold text-indigo-950 dark:text-indigo-100 text-[11px]">Admin</span>
+              <span className="text-[9px] text-slate-400 font-mono truncate max-w-full">admin@college</span>
             </Button>
           </div>
         </div>
@@ -192,7 +210,7 @@ export const LoginPage: React.FC = () => {
                   setEmail(e.target.value);
                   setErrorMessage(null);
                 }}
-                placeholder="student@college.edu"
+                placeholder="user@college.edu"
                 leftIcon={<Mail className="w-4 h-4" />}
               />
 
