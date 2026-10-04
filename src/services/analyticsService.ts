@@ -54,30 +54,68 @@ export const STATUS_LABELS: Record<ComplaintStatus, string> = {
 };
 
 /**
- * Calculates start, end, and label for each DateRangeOption
+ * Safely subtracts calendar months from a date while clamping the day to the last valid
+ * day of the target month (e.g. May 31 minus 3 months -> Feb 28/29, Oct 31 minus 6 months -> Apr 30),
+ * strictly preserving the original time of day without mutating the input date.
+ */
+export function subtractCalendarMonths(
+  baseDate: Date,
+  months: number,
+  useUTC: boolean = true
+): Date {
+  const year = useUTC ? baseDate.getUTCFullYear() : baseDate.getFullYear();
+  const month = useUTC ? baseDate.getUTCMonth() : baseDate.getMonth();
+  const day = useUTC ? baseDate.getUTCDate() : baseDate.getDate();
+  const hours = useUTC ? baseDate.getUTCHours() : baseDate.getHours();
+  const minutes = useUTC ? baseDate.getUTCMinutes() : baseDate.getMinutes();
+  const seconds = useUTC ? baseDate.getUTCSeconds() : baseDate.getSeconds();
+  const ms = useUTC ? baseDate.getUTCMilliseconds() : baseDate.getMilliseconds();
+
+  const totalMonths = year * 12 + month - months;
+  const targetYear = Math.floor(totalMonths / 12);
+  let targetMonth = totalMonths % 12;
+  if (targetMonth < 0) {
+    targetMonth += 12;
+  }
+
+  // Days in target month (day 0 of targetMonth + 1 gives the last day of targetMonth)
+  const maxDays = useUTC
+    ? new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate()
+    : new Date(targetYear, targetMonth + 1, 0).getDate();
+
+  const targetDay = Math.min(day, maxDays);
+
+  return useUTC
+    ? new Date(Date.UTC(targetYear, targetMonth, targetDay, hours, minutes, seconds, ms))
+    : new Date(targetYear, targetMonth, targetDay, hours, minutes, seconds, ms);
+}
+
+/**
+ * Calculates start, end, and label for each DateRangeOption.
+ * Reliably clamps month-end dates and strictly preserves exact time of day.
  */
 export function getRangeWindow(
   range: DateRangeOption,
   now: Date
 ): { start: Date; end: Date; label: string } {
   const end = new Date(now.getTime());
-  const start = new Date(now.getTime());
+  let start: Date;
 
   switch (range) {
     case '7d':
-      start.setDate(start.getDate() - 7);
+      start = new Date(now.getTime() - 7 * 86400000);
       return { start, end, label: 'Last 7 Days' };
     case '30d':
-      start.setDate(start.getDate() - 30);
+      start = new Date(now.getTime() - 30 * 86400000);
       return { start, end, label: 'Last 30 Days' };
     case '3m':
-      start.setMonth(start.getMonth() - 3);
+      start = subtractCalendarMonths(now, 3);
       return { start, end, label: 'Last 3 Months' };
     case '6m':
-      start.setMonth(start.getMonth() - 6);
+      start = subtractCalendarMonths(now, 6);
       return { start, end, label: 'Last 6 Months' };
     case '1y':
-      start.setFullYear(start.getFullYear() - 1);
+      start = subtractCalendarMonths(now, 12);
       return { start, end, label: 'Last 1 Year' };
   }
 }
@@ -215,20 +253,7 @@ export function generateTrendData(
     // 6 monthly contiguous intervals covering exactly from start to end
     for (let i = 0; i < 6; i++) {
       const bStart = i === 0 ? new Date(startMs) : buckets[i - 1].endDate;
-      let bEnd: Date;
-      if (i === 5) {
-        bEnd = new Date(endMs);
-      } else {
-        const d = new Date(start.getTime());
-        d.setMonth(d.getMonth() + i + 1);
-        if (d.getTime() <= bStart.getTime()) {
-          d.setTime(bStart.getTime() + 28 * 86400000);
-        }
-        if (d.getTime() >= endMs) {
-          d.setTime(endMs);
-        }
-        bEnd = d;
-      }
+      const bEnd = i === 5 ? new Date(endMs) : subtractCalendarMonths(end, 6 - (i + 1));
       const label = bStart.toLocaleDateString('en-US', { month: 'short' });
       buckets.push({ label, startDate: bStart, endDate: bEnd, submitted: 0, resolved: 0 });
     }
@@ -236,20 +261,7 @@ export function generateTrendData(
     // 12 monthly contiguous intervals covering exactly from start to end
     for (let i = 0; i < 12; i++) {
       const bStart = i === 0 ? new Date(startMs) : buckets[i - 1].endDate;
-      let bEnd: Date;
-      if (i === 11) {
-        bEnd = new Date(endMs);
-      } else {
-        const d = new Date(start.getTime());
-        d.setMonth(d.getMonth() + i + 1);
-        if (d.getTime() <= bStart.getTime()) {
-          d.setTime(bStart.getTime() + 28 * 86400000);
-        }
-        if (d.getTime() >= endMs) {
-          d.setTime(endMs);
-        }
-        bEnd = d;
-      }
+      const bEnd = i === 11 ? new Date(endMs) : subtractCalendarMonths(end, 12 - (i + 1));
       const label = bStart.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
       buckets.push({ label, startDate: bStart, endDate: bEnd, submitted: 0, resolved: 0 });
     }

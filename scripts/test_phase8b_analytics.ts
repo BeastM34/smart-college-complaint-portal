@@ -40,6 +40,7 @@ import {
   getRangeWindow,
   generateTrendData,
   calculateAverageResolutionTime,
+  subtractCalendarMonths,
 } from '../src/services/analyticsService';
 import {
   STORAGE_KEYS,
@@ -1134,6 +1135,113 @@ async function runPhase8bTests() {
       50,
       'Resolutions inside range for tickets created before range are counted in resolution trends, and trend submissions match KPI total exactly',
       `resolvedCount=${totalTrendResolved}, submittedCount=${totalTrendSubmitted}, kpiTotal=${cwRes.totalComplaints}`
+    );
+
+    // -------------------------------------------------------------------------
+    // SECTION K: Deterministic Month-End & Date Calculation Edge-Cases
+    // -------------------------------------------------------------------------
+    console.log('\n--- 11. Deterministic Month-End & Date Calculation Edge-Cases ---');
+
+    // 51. May 31 minus 3 months clamps to February 28 (or 29) without rolling into March
+    const may31NonLeap = new Date('2026-05-31T14:30:00.000Z');
+    const winMay31 = getRangeWindow('3m', may31NonLeap);
+    assert(
+      winMay31.start.toISOString() === '2026-02-28T14:30:00.000Z' &&
+        winMay31.start.getUTCFullYear() === 2026 &&
+        winMay31.start.getUTCMonth() === 1 &&
+        winMay31.start.getUTCDate() === 28 &&
+        winMay31.start.getUTCHours() === 14 &&
+        winMay31.start.getUTCMinutes() === 30,
+      51,
+      'May 31 minus 3 months clamps to February 28 (non-leap) without rolling into March',
+      `got ${winMay31.start.toISOString()}`
+    );
+
+    // 52. October 31 minus 6 months clamps to April 30 without rolling into May
+    const oct31 = new Date('2026-10-31T10:15:30.500Z');
+    const winOct31 = getRangeWindow('6m', oct31);
+    assert(
+      winOct31.start.toISOString() === '2026-04-30T10:15:30.500Z' &&
+        winOct31.start.getUTCFullYear() === 2026 &&
+        winOct31.start.getUTCMonth() === 3 &&
+        winOct31.start.getUTCDate() === 30 &&
+        winOct31.start.getUTCHours() === 10 &&
+        winOct31.start.getUTCMinutes() === 15 &&
+        winOct31.start.getUTCSeconds() === 30 &&
+        winOct31.start.getUTCMilliseconds() === 500,
+      52,
+      'October 31 minus 6 months clamps to April 30 without rolling into May',
+      `got ${winOct31.start.toISOString()}`
+    );
+
+    // 53. February 29 minus 1 year in a leap year clamps to February 28
+    const leapFeb29 = new Date('2024-02-29T08:00:00.000Z');
+    const winLeapFeb = getRangeWindow('1y', leapFeb29);
+    assert(
+      winLeapFeb.start.toISOString() === '2023-02-28T08:00:00.000Z' &&
+        winLeapFeb.start.getUTCFullYear() === 2023 &&
+        winLeapFeb.start.getUTCMonth() === 1 &&
+        winLeapFeb.start.getUTCDate() === 28 &&
+        winLeapFeb.start.getUTCHours() === 8,
+      53,
+      'February 29 minus 1 year in a leap year clamps to February 28 in non-leap year',
+      `got ${winLeapFeb.start.toISOString()}`
+    );
+
+    // 54. Non-leap-year and leap-year February boundaries
+    const march31NonLeap = new Date('2025-03-31T09:12:00.000Z');
+    const febNonLeap = subtractCalendarMonths(march31NonLeap, 1);
+    const may31Leap = new Date('2024-05-31T09:12:00.000Z');
+    const febLeap = getRangeWindow('3m', may31Leap);
+    assert(
+      febNonLeap.toISOString() === '2025-02-28T09:12:00.000Z' &&
+        febLeap.start.toISOString() === '2024-02-29T09:12:00.000Z',
+      54,
+      'February boundaries correctly handle non-leap (Feb 28) and leap year (Feb 29)',
+      `nonLeap=${febNonLeap.toISOString()}, leap=${febLeap.start.toISOString()}`
+    );
+
+    // 55. A month with 30 days clamps accurately from day 31
+    const may31ToApril = subtractCalendarMonths(new Date('2026-05-31T11:00:00.000Z'), 1);
+    const july31ToJune = subtractCalendarMonths(new Date('2026-07-31T11:00:00.000Z'), 1);
+    const dec31ToNov = subtractCalendarMonths(new Date('2026-12-31T11:00:00.000Z'), 1);
+    assert(
+      may31ToApril.toISOString() === '2026-04-30T11:00:00.000Z' &&
+        july31ToJune.toISOString() === '2026-06-30T11:00:00.000Z' &&
+        dec31ToNov.toISOString() === '2026-11-30T11:00:00.000Z',
+      55,
+      'Months with 30 days clamp day 31 accurately (April 30, June 30, Nov 30)'
+    );
+
+    // 56. Preservation of the original time of day and non-mutation of base date
+    const timePreserveDate = new Date('2026-10-31T18:45:12.345Z');
+    const timePreserveCopy = timePreserveDate.getTime();
+    const winTimePreserve = getRangeWindow('6m', timePreserveDate);
+    assert(
+      winTimePreserve.start.getUTCHours() === 18 &&
+        winTimePreserve.start.getUTCMinutes() === 45 &&
+        winTimePreserve.start.getUTCSeconds() === 12 &&
+        winTimePreserve.start.getUTCMilliseconds() === 345 &&
+        timePreserveDate.getTime() === timePreserveCopy,
+      56,
+      'Preservation of original time of day (hours, minutes, seconds, ms) and non-mutation'
+    );
+
+    // 57. Existing normal-date calculations remain completely unchanged
+    const normalNow = new Date('2026-10-04T12:00:00.000Z');
+    const win7dNorm = getRangeWindow('7d', normalNow);
+    const win30dNorm = getRangeWindow('30d', normalNow);
+    const win3mNorm = getRangeWindow('3m', normalNow);
+    const win6mNorm = getRangeWindow('6m', normalNow);
+    const win1yNorm = getRangeWindow('1y', normalNow);
+    assert(
+      win7dNorm.start.toISOString() === '2026-09-27T12:00:00.000Z' &&
+        win30dNorm.start.toISOString() === '2026-09-04T12:00:00.000Z' &&
+        win3mNorm.start.toISOString() === '2026-07-04T12:00:00.000Z' &&
+        win6mNorm.start.toISOString() === '2026-04-04T12:00:00.000Z' &&
+        win1yNorm.start.toISOString() === '2025-10-04T12:00:00.000Z',
+      57,
+      'Existing normal-date calculations (7d, 30d, 3m, 6m, 1y) remain completely unchanged'
     );
   } finally {
     // Restore original complaints in storage
