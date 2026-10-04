@@ -12,7 +12,6 @@ import type {
   ComplaintStatus,
 } from '@/types';
 import { STORAGE_KEYS, getStorageItem } from '@/utils/storage';
-import { MOCK_COMPLAINTS } from '@/data/mockData';
 import { authService } from './authService';
 
 /**
@@ -38,11 +37,12 @@ export const CATEGORY_LABELS: Record<string, string> = {
   other: 'Other',
 };
 
-export const PRIORITY_LABELS: Record<Priority, string> = {
+export const PRIORITY_LABELS: Record<Priority | 'unknown', string> = {
   critical: 'Critical',
   high: 'High',
   medium: 'Medium',
   low: 'Low',
+  unknown: 'Unknown',
 };
 
 export const STATUS_LABELS: Record<ComplaintStatus, string> = {
@@ -104,28 +104,38 @@ export function getResolutionTimestamp(c: Complaint): number | null {
 }
 
 /**
- * Computes average resolution time in hours and formatted string for valid resolved complaints
+ * Computes average resolution time in hours and formatted string for valid resolved complaints.
+ * Strictly excludes future resolution timestamps, resolutions preceding creation, and unresolvable timestamps.
  */
-export function calculateAverageResolutionTime(complaints: Complaint[]): {
+export function calculateAverageResolutionTime(
+  complaints: Complaint[],
+  referenceNow?: Date
+): {
   avgHours: number | null;
   formatted: string;
   validCount: number;
 } {
   const validDurationsHours: number[] = [];
+  const maxTime = (referenceNow || new Date()).getTime();
 
   for (const c of complaints) {
     if (c.status !== 'resolved') continue;
 
     const createdTime = new Date(c.createdAt).getTime();
     if (isNaN(createdTime)) continue;
+    // Exclude records created in the future relative to the reference timestamp
+    if (createdTime > maxTime) continue;
 
     const resolvedTime = getResolutionTimestamp(c);
     if (resolvedTime === null || isNaN(resolvedTime)) continue;
 
-    const durationMs = resolvedTime - createdTime;
     // Exclude invalid records where resolution timestamp precedes creation timestamp
-    if (durationMs < 0) continue;
+    if (resolvedTime < createdTime) continue;
 
+    // Exclude future resolution timestamps relative to reference timestamp
+    if (resolvedTime > maxTime) continue;
+
+    const durationMs = resolvedTime - createdTime;
     const hours = durationMs / (1000 * 60 * 60);
     validDurationsHours.push(hours);
   }
@@ -152,13 +162,19 @@ export function calculateAverageResolutionTime(complaints: Complaint[]): {
 }
 
 /**
- * Computes chronological trend buckets for submission and resolution events
+ * Computes chronological trend buckets for submission and resolution events.
+ * The buckets strictly and contiguously span from range start to end with zero gaps and zero overlaps.
+ * Only events within [startDate, endDate] are counted, and each event is counted exactly once.
  */
 export function generateTrendData(
   complaints: Complaint[],
   range: DateRangeOption,
   now: Date
 ): TrendDataPoint[] {
+  const { start, end } = getRangeWindow(range, now);
+  const startMs = start.getTime();
+  const endMs = end.getTime();
+
   const buckets: {
     label: string;
     startDate: Date;
@@ -167,74 +183,113 @@ export function generateTrendData(
     resolved: number;
   }[] = [];
 
-  const nowMs = now.getTime();
-
   if (range === '7d') {
-    // 7 daily buckets from 6 days ago up to today
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
-      const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-      const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-      const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      buckets.push({ label, startDate: start, endDate: end, submitted: 0, resolved: 0 });
+    // 7 daily contiguous intervals from start to end
+    for (let i = 0; i < 7; i++) {
+      const bStart = new Date(startMs + i * 86400000);
+      const bEnd = i === 6 ? new Date(endMs) : new Date(startMs + (i + 1) * 86400000);
+      const label = bStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      buckets.push({ label, startDate: bStart, endDate: bEnd, submitted: 0, resolved: 0 });
     }
   } else if (range === '30d') {
-    // 30 daily buckets
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
-      const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-      const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-      const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      buckets.push({ label, startDate: start, endDate: end, submitted: 0, resolved: 0 });
+    // 30 daily contiguous intervals from start to end
+    for (let i = 0; i < 30; i++) {
+      const bStart = new Date(startMs + i * 86400000);
+      const bEnd = i === 29 ? new Date(endMs) : new Date(startMs + (i + 1) * 86400000);
+      const label = bStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      buckets.push({ label, startDate: bStart, endDate: bEnd, submitted: 0, resolved: 0 });
     }
   } else if (range === '3m') {
-    // 12 weekly intervals leading up to now
-    for (let i = 11; i >= 0; i--) {
-      const weekEnd = new Date(nowMs - i * 7 * 86400000);
-      const weekStart = new Date(nowMs - (i + 1) * 7 * 86400000 + 1);
-      const label = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
-      buckets.push({ label, startDate: weekStart, endDate: weekEnd, submitted: 0, resolved: 0 });
+    // Weekly contiguous intervals covering exactly from start to end (with partial last week)
+    let curMs = startMs;
+    const oneWeekMs = 7 * 86400000;
+    while (curMs < endMs) {
+      const nextMs = Math.min(curMs + oneWeekMs, endMs);
+      const bStart = new Date(curMs);
+      const bEnd = new Date(nextMs);
+      const label = bStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      buckets.push({ label, startDate: bStart, endDate: bEnd, submitted: 0, resolved: 0 });
+      curMs = nextMs;
     }
   } else if (range === '6m') {
-    // 6 calendar month buckets
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const start = new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
-      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
-      const label = d.toLocaleDateString('en-US', { month: 'short' });
-      buckets.push({ label, startDate: start, endDate: end, submitted: 0, resolved: 0 });
+    // 6 monthly contiguous intervals covering exactly from start to end
+    for (let i = 0; i < 6; i++) {
+      const bStart = i === 0 ? new Date(startMs) : buckets[i - 1].endDate;
+      let bEnd: Date;
+      if (i === 5) {
+        bEnd = new Date(endMs);
+      } else {
+        const d = new Date(start.getTime());
+        d.setMonth(d.getMonth() + i + 1);
+        if (d.getTime() <= bStart.getTime()) {
+          d.setTime(bStart.getTime() + 28 * 86400000);
+        }
+        if (d.getTime() >= endMs) {
+          d.setTime(endMs);
+        }
+        bEnd = d;
+      }
+      const label = bStart.toLocaleDateString('en-US', { month: 'short' });
+      buckets.push({ label, startDate: bStart, endDate: bEnd, submitted: 0, resolved: 0 });
     }
   } else if (range === '1y') {
-    // 12 calendar month buckets
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const start = new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
-      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
-      const label = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-      buckets.push({ label, startDate: start, endDate: end, submitted: 0, resolved: 0 });
+    // 12 monthly contiguous intervals covering exactly from start to end
+    for (let i = 0; i < 12; i++) {
+      const bStart = i === 0 ? new Date(startMs) : buckets[i - 1].endDate;
+      let bEnd: Date;
+      if (i === 11) {
+        bEnd = new Date(endMs);
+      } else {
+        const d = new Date(start.getTime());
+        d.setMonth(d.getMonth() + i + 1);
+        if (d.getTime() <= bStart.getTime()) {
+          d.setTime(bStart.getTime() + 28 * 86400000);
+        }
+        if (d.getTime() >= endMs) {
+          d.setTime(endMs);
+        }
+        bEnd = d;
+      }
+      const label = bStart.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+      buckets.push({ label, startDate: bStart, endDate: bEnd, submitted: 0, resolved: 0 });
     }
   }
 
   // Populate events into buckets
+  const placeEvent = (timeMs: number, type: 'submitted' | 'resolved') => {
+    // Strictly exclude events outside authoritative [startMs, endMs] boundary
+    if (timeMs < startMs || timeMs > endMs) return;
+
+    for (let i = 0; i < buckets.length; i++) {
+      const bStartMs = buckets[i].startDate.getTime();
+      const bEndMs = buckets[i].endDate.getTime();
+      const isLast = i === buckets.length - 1;
+
+      // Adjacent buckets do not overlap: [start, end) for all except the last bucket [start, end]
+      const matches = isLast
+        ? timeMs >= bStartMs && timeMs <= bEndMs
+        : timeMs >= bStartMs && timeMs < bEndMs;
+
+      if (matches) {
+        if (type === 'submitted') {
+          buckets[i].submitted++;
+        } else {
+          buckets[i].resolved++;
+        }
+        break;
+      }
+    }
+  };
+
   for (const c of complaints) {
     const createdTime = new Date(c.createdAt).getTime();
-    if (!isNaN(createdTime) && createdTime <= nowMs) {
-      for (const bucket of buckets) {
-        if (createdTime >= bucket.startDate.getTime() && createdTime <= bucket.endDate.getTime()) {
-          bucket.submitted++;
-          break;
-        }
-      }
+    if (!isNaN(createdTime)) {
+      placeEvent(createdTime, 'submitted');
     }
 
     const resolvedTime = getResolutionTimestamp(c);
-    if (resolvedTime !== null && !isNaN(resolvedTime) && resolvedTime <= nowMs) {
-      for (const bucket of buckets) {
-        if (resolvedTime >= bucket.startDate.getTime() && resolvedTime <= bucket.endDate.getTime()) {
-          bucket.resolved++;
-          break;
-        }
-      }
+    if (resolvedTime !== null && !isNaN(resolvedTime)) {
+      placeEvent(resolvedTime, 'resolved');
     }
   }
 
@@ -285,28 +340,30 @@ export function calculateCategoryDistribution(
 }
 
 /**
- * Computes priority distribution across low, medium, high, critical
+ * Computes priority distribution across low, medium, high, critical, and unknown
  */
 export function calculatePriorityDistribution(
   complaints: Complaint[],
   totalComplaints: number
 ): PriorityMetric[] {
-  const counts: Record<Priority, number> = {
+  const counts: Record<Priority | 'unknown', number> = {
     critical: 0,
     high: 0,
     medium: 0,
     low: 0,
+    unknown: 0,
   };
 
   for (const c of complaints) {
-    if (c.priority && counts[c.priority] !== undefined) {
-      counts[c.priority]++;
+    const rawPri = (c.priority || '').toString().toLowerCase();
+    if (rawPri === 'critical' || rawPri === 'high' || rawPri === 'medium' || rawPri === 'low') {
+      counts[rawPri as Priority]++;
     } else {
-      counts.medium++;
+      counts.unknown++;
     }
   }
 
-  const order: Priority[] = ['critical', 'high', 'medium', 'low'];
+  const order: (Priority | 'unknown')[] = ['critical', 'high', 'medium', 'low', 'unknown'];
   return order.map((pri) => ({
     priority: pri,
     label: PRIORITY_LABELS[pri],
@@ -346,7 +403,8 @@ export function calculateStatusDistribution(
 }
 
 /**
- * Computes department metrics and resolution rates
+ * Computes department metrics and resolution rates.
+ * Assigns complaints with missing or empty departments to 'Unassigned'.
  */
 export function calculateDepartmentPerformance(complaints: Complaint[]): DepartmentMetric[] {
   const deptMap: Record<
@@ -356,7 +414,7 @@ export function calculateDepartmentPerformance(complaints: Complaint[]): Departm
 
   for (const c of complaints) {
     const rawDept = (c.assignedDepartment || c.department || '').trim();
-    const dept = rawDept.length > 0 ? rawDept : 'General Facilities';
+    const dept = rawDept.length > 0 ? rawDept : 'Unassigned';
 
     if (!deptMap[dept]) {
       deptMap[dept] = { total: 0, resolved: 0, pending: 0, active: 0 };
@@ -409,18 +467,18 @@ class AnalyticsService {
   ): Promise<ComprehensiveAnalytics> {
     this.ensureAdmin();
 
-    const allComplaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS) || [];
+    const rawComplaints = getStorageItem<unknown>(STORAGE_KEYS.COMPLAINTS, []);
+    const allComplaints: Complaint[] = Array.isArray(rawComplaints) ? rawComplaints : [];
     const now = options?.customNow || new Date();
     const { start, end, label } = getRangeWindow(range, now);
     const startMs = start.getTime();
     const endMs = end.getTime();
 
-    // Filter complaints created within the reporting period
+    // Filter complaints created within the authoritative reporting period
     const filtered = allComplaints.filter((c) => {
       const createdMs = new Date(c.createdAt).getTime();
       if (isNaN(createdMs)) return false;
-      if (createdMs > endMs) return false; // future dates excluded
-      return createdMs >= startMs;
+      return createdMs >= startMs && createdMs <= endMs;
     });
 
     const total = filtered.length;
@@ -432,7 +490,7 @@ class AnalyticsService {
     const activeQueue = pending + assigned + inProgress;
     const resolutionRate = total > 0 ? Math.round((resolved / total) * 100) : 0;
 
-    const resCalc = calculateAverageResolutionTime(filtered);
+    const resCalc = calculateAverageResolutionTime(filtered, now);
     const trendData = generateTrendData(allComplaints, range, now);
     const categoryDistribution = calculateCategoryDistribution(filtered, total);
     const priorityDistribution = calculatePriorityDistribution(filtered, total);
@@ -469,7 +527,8 @@ class AnalyticsService {
   public async getSummary(options?: { customNow?: Date }): Promise<AnalyticsSummary> {
     this.ensureAdmin();
 
-    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS) || [];
+    const rawComplaints = getStorageItem<unknown>(STORAGE_KEYS.COMPLAINTS, []);
+    const complaints: Complaint[] = Array.isArray(rawComplaints) ? rawComplaints : [];
 
     if (complaints.length === 0) {
       return {
@@ -492,7 +551,7 @@ class AnalyticsService {
     }
 
     const now = options?.customNow || new Date();
-    const resCalc = calculateAverageResolutionTime(complaints);
+    const resCalc = calculateAverageResolutionTime(complaints, now);
 
     const byCategory: Record<string, number> = {};
     complaints.forEach((c) => {

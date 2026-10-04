@@ -247,7 +247,7 @@ export interface CategoryMetric {
 }
 
 export interface PriorityMetric {
-  priority: Priority;
+  priority: Priority | 'unknown';
   label: string;
   count: number;
   percentage: number;

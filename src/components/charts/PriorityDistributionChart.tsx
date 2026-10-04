@@ -1,7 +1,7 @@
 import React from 'react';
 import type { PriorityMetric, Priority } from '@/types';
 import { cn } from '@/utils/cn';
-import { ShieldAlert, AlertTriangle, AlertCircle, Info, Inbox } from 'lucide-react';
+import { ShieldAlert, AlertTriangle, AlertCircle, Info, HelpCircle, Inbox } from 'lucide-react';
 
 export interface PriorityDistributionChartProps {
   data: PriorityMetric[];
@@ -10,7 +10,7 @@ export interface PriorityDistributionChartProps {
 }
 
 const PRIORITY_CONFIG: Record<
-  Priority,
+  Priority | 'unknown',
   {
     bgClass: string;
     textClass: string;
@@ -47,6 +47,13 @@ const PRIORITY_CONFIG: Record<
     barColor: 'bg-slate-400',
     icon: <Info className="w-4 h-4 text-slate-400" />,
   },
+  unknown: {
+    bgClass: 'bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800/60 dark:text-zinc-300 dark:border-zinc-700',
+    textClass: 'text-zinc-600 dark:text-zinc-400',
+    badgeBg: 'bg-zinc-400',
+    barColor: 'bg-zinc-400 dark:bg-zinc-500',
+    icon: <HelpCircle className="w-4 h-4 text-zinc-400 dark:text-zinc-400" />,
+  },
 };
 
 export const PriorityDistributionChart: React.FC<PriorityDistributionChartProps> = ({
@@ -68,11 +75,14 @@ export const PriorityDistributionChart: React.FC<PriorityDistributionChartProps>
     );
   }
 
+  // Display standard priorities and only show unknown when applicable (count > 0)
+  const visibleItems = data.filter((item) => item.priority !== 'unknown' || item.count > 0);
+
   return (
     <div className={cn('space-y-4', className)}>
       {/* Combined Horizontal Stacked Bar */}
       <div className="w-full h-3 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden flex shadow-xs">
-        {data.map((item) => {
+        {visibleItems.map((item) => {
           if (item.count === 0) return null;
           const cfg = PRIORITY_CONFIG[item.priority] || PRIORITY_CONFIG.low;
           return (
@@ -88,14 +98,16 @@ export const PriorityDistributionChart: React.FC<PriorityDistributionChartProps>
 
       {/* Grid of Priority Cards */}
       <div className="grid grid-cols-2 gap-2.5">
-        {data.map((item) => {
+        {visibleItems.map((item, idx) => {
           const cfg = PRIORITY_CONFIG[item.priority] || PRIORITY_CONFIG.low;
+          const isLastOdd = idx === visibleItems.length - 1 && visibleItems.length % 2 !== 0;
           return (
             <div
               key={item.priority}
               className={cn(
                 'p-3 rounded-xl border flex items-center justify-between transition-all hover:shadow-xs',
-                cfg.bgClass
+                cfg.bgClass,
+                isLastOdd && 'col-span-2'
               )}
             >
               <div className="flex items-center gap-2">

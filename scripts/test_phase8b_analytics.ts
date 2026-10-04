@@ -35,10 +35,20 @@
  */
 
 import { authService } from '../src/services/authService';
-import { analyticsService } from '../src/services/analyticsService';
-import { STORAGE_KEYS, setStorageItem, getStorageItem } from '../src/utils/storage';
+import {
+  analyticsService,
+  getRangeWindow,
+  generateTrendData,
+  calculateAverageResolutionTime,
+} from '../src/services/analyticsService';
+import {
+  STORAGE_KEYS,
+  setStorageItem,
+  getStorageItem,
+  removeStorageItem,
+} from '../src/utils/storage';
 import { MOCK_COMPLAINTS } from '../src/data/mockData';
-import type { Complaint } from '../src/types';
+import type { Complaint, DateRangeOption } from '../src/types';
 
 async function runPhase8bTests() {
   console.log('======================================================================');
@@ -516,12 +526,12 @@ async function runPhase8bTests() {
       'Complaints with unknown categories are handled safely and human-labeled'
     );
 
-    // 28. Complaints without departments are handled safely (assigned to General Facilities)
-    const generalDept = res7d.departmentPerformance.find((d) => d.department === 'General Facilities');
+    // 28. Complaints without departments are handled safely (assigned to Unassigned)
+    const unassignedDept = res7d.departmentPerformance.find((d) => d.department === 'Unassigned');
     assert(
-      Boolean(generalDept && generalDept.total === 1),
+      Boolean(unassignedDept && unassignedDept.total === 1),
       28,
-      'Complaints without departments are grouped into General Facilities'
+      'Complaints without departments are grouped into Unassigned'
     );
 
     // 29. Zero resolved complaints do not cause division errors
@@ -560,6 +570,570 @@ async function runPhase8bTests() {
       identicalRes.totalComplaints === 6,
       30,
       'Multiple complaints with identical timestamps are handled and counted correctly'
+    );
+
+    // -------------------------------------------------------------------------
+    // SECTION E: Empty Storage Robustness & Absence Checks
+    // -------------------------------------------------------------------------
+    console.log('\n--- 5. Empty Storage Robustness & Absence Checks ---');
+
+    // 31. Storage key completely absent (removeStorageItem) returns zero metrics without mock fallback
+    removeStorageItem(STORAGE_KEYS.COMPLAINTS);
+    const absentResult = await analyticsService.getAnalytics('30d', { customNow: fixedNow });
+    const absentSummary = await analyticsService.getSummary({ customNow: fixedNow });
+    assert(
+      absentResult.totalComplaints === 0 &&
+        absentResult.avgResolutionTimeHours === null &&
+        absentResult.categoryDistribution.length === 0 &&
+        absentSummary.totalComplaints === 0 &&
+        absentSummary.monthlyTrends.length === 0,
+      31,
+      'Absent storage key returns zero metrics without substituting mock data'
+    );
+
+    // 32. Malformed non-array storage data safely produces zero metrics
+    setStorageItem(STORAGE_KEYS.COMPLAINTS, { corrupt: 'not_an_array' } as any);
+    const corruptResult = await analyticsService.getAnalytics('30d', { customNow: fixedNow });
+    assert(
+      corruptResult.totalComplaints === 0 &&
+        corruptResult.categoryDistribution.length === 0 &&
+        corruptResult.departmentPerformance.length === 0,
+      32,
+      'Malformed non-array storage data is safely handled as empty array without throwing'
+    );
+
+    // 33. Complaint storage with valid records produces correct metrics
+    setStorageItem(STORAGE_KEYS.COMPLAINTS, testFixtures);
+    const validResult = await analyticsService.getAnalytics('7d', { customNow: fixedNow });
+    assert(
+      validResult.totalComplaints === 6 && validResult.resolvedComplaints === 2,
+      33,
+      'Valid stored records correctly populate analytics KPIs'
+    );
+
+    // -------------------------------------------------------------------------
+    // SECTION F: Priority Classification & Unknown Handling
+    // -------------------------------------------------------------------------
+    console.log('\n--- 6. Priority Classification & Unknown Handling ---');
+
+    // 34. Missing priority is grouped into Unknown and not counted as Medium
+    const priorityFixtures: Complaint[] = [
+      {
+        id: 'pri-none',
+        ticketNumber: 'PN-1',
+        title: 'Missing priority ticket',
+        description: 'No priority field',
+        category: 'electrical',
+        status: 'pending',
+        studentId: 's-1',
+        studentName: 'Student One',
+        createdAt: '2026-10-02T10:00:00Z',
+        updatedAt: '2026-10-02T10:00:00Z',
+        timeline: [],
+      } as any,
+      {
+        id: 'pri-med',
+        ticketNumber: 'PM-1',
+        title: 'Real medium ticket',
+        description: 'Medium priority',
+        category: 'electrical',
+        priority: 'medium',
+        status: 'pending',
+        studentId: 's-1',
+        studentName: 'Student One',
+        createdAt: '2026-10-02T10:00:00Z',
+        updatedAt: '2026-10-02T10:00:00Z',
+        timeline: [],
+      },
+    ];
+    setStorageItem(STORAGE_KEYS.COMPLAINTS, priorityFixtures);
+    const priMissingRes = await analyticsService.getAnalytics('7d', { customNow: fixedNow });
+    const unknownPriMetric = priMissingRes.priorityDistribution.find((p) => p.priority === 'unknown');
+    const medPriMetric = priMissingRes.priorityDistribution.find((p) => p.priority === 'medium');
+    assert(
+      unknownPriMetric?.count === 1 && medPriMetric?.count === 1,
+      34,
+      'Missing priority is grouped into Unknown and does NOT inflate Medium count',
+      `unknown=${unknownPriMetric?.count}, med=${medPriMetric?.count}`
+    );
+
+    // 35. Invalid priority string is grouped into Unknown and not counted as Medium
+    const invalidPriFixtures: Complaint[] = [
+      {
+        id: 'pri-invalid-1',
+        ticketNumber: 'PI-1',
+        title: 'Invalid priority ticket',
+        description: 'Unknown string priority',
+        category: 'plumbing',
+        priority: 'catastrophic' as any,
+        status: 'pending',
+        studentId: 's-1',
+        studentName: 'Student One',
+        createdAt: '2026-10-02T10:00:00Z',
+        updatedAt: '2026-10-02T10:00:00Z',
+        timeline: [],
+      },
+    ];
+    setStorageItem(STORAGE_KEYS.COMPLAINTS, invalidPriFixtures);
+    const priInvalidRes = await analyticsService.getAnalytics('7d', { customNow: fixedNow });
+    const unknownInvalidMetric = priInvalidRes.priorityDistribution.find((p) => p.priority === 'unknown');
+    const medInvalidMetric = priInvalidRes.priorityDistribution.find((p) => p.priority === 'medium');
+    assert(
+      unknownInvalidMetric?.count === 1 && medInvalidMetric?.count === 0,
+      35,
+      'Invalid priority string is categorized as Unknown with Medium remaining 0',
+      `unknown=${unknownInvalidMetric?.count}, med=${medInvalidMetric?.count}`
+    );
+
+    // 36. Correct Medium count when Unknown records exist and total distribution matches
+    const mixedPriFixtures: Complaint[] = [
+      { ...priorityFixtures[0] }, // missing priority (unknown)
+      { ...invalidPriFixtures[0] }, // invalid priority (unknown)
+      { ...priorityFixtures[1] }, // medium (medium)
+      {
+        id: 'pri-high',
+        ticketNumber: 'PH-1',
+        title: 'High priority',
+        description: 'High',
+        category: 'electrical',
+        priority: 'high',
+        status: 'pending',
+        studentId: 's-1',
+        studentName: 'Student One',
+        createdAt: '2026-10-02T10:00:00Z',
+        updatedAt: '2026-10-02T10:00:00Z',
+        timeline: [],
+      },
+    ];
+    setStorageItem(STORAGE_KEYS.COMPLAINTS, mixedPriFixtures);
+    const mixedPriRes = await analyticsService.getAnalytics('7d', { customNow: fixedNow });
+    const uCount = mixedPriRes.priorityDistribution.find((p) => p.priority === 'unknown')?.count;
+    const mCount = mixedPriRes.priorityDistribution.find((p) => p.priority === 'medium')?.count;
+    const hCount = mixedPriRes.priorityDistribution.find((p) => p.priority === 'high')?.count;
+    const totalCount = mixedPriRes.totalComplaints;
+    assert(
+      uCount === 2 && mCount === 1 && hCount === 1 && totalCount === 4,
+      36,
+      'Total priority distribution is accurate (unknown=2, medium=1, high=1, total=4)',
+      `got unknown=${uCount}, med=${mCount}, high=${hCount}, total=${totalCount}`
+    );
+
+    // -------------------------------------------------------------------------
+    // SECTION G: Department Classification & Unassigned Fallback
+    // -------------------------------------------------------------------------
+    console.log('\n--- 7. Department Classification & Unassigned Fallback ---');
+
+    // 37. Empty department strings are treated as Unassigned
+    const emptyDeptFixtures: Complaint[] = [
+      {
+        id: 'dept-empty-1',
+        ticketNumber: 'DE-1',
+        title: 'Empty department string',
+        description: 'Blank department',
+        category: 'hostel',
+        priority: 'low',
+        status: 'pending',
+        assignedDepartment: '',
+        department: '   ',
+        studentId: 's-1',
+        studentName: 'Student One',
+        createdAt: '2026-10-02T10:00:00Z',
+        updatedAt: '2026-10-02T10:00:00Z',
+        timeline: [],
+      },
+    ];
+    setStorageItem(STORAGE_KEYS.COMPLAINTS, emptyDeptFixtures);
+    const emptyDeptRes = await analyticsService.getAnalytics('7d', { customNow: fixedNow });
+    const unassignedItem = emptyDeptRes.departmentPerformance.find((d) => d.department === 'Unassigned');
+    assert(
+      Boolean(unassignedItem && unassignedItem.total === 1),
+      37,
+      'Empty and whitespace department strings are classified into Unassigned',
+      `departments=${JSON.stringify(emptyDeptRes.departmentPerformance.map((d) => d.department))}`
+    );
+
+    // 38. Complaints with department values remain correctly grouped
+    const deptGroupFixtures: Complaint[] = [
+      {
+        id: 'dg-1',
+        ticketNumber: 'DG-1',
+        title: 'Assigned dept test',
+        description: 'Explicit assigned department',
+        category: 'electrical',
+        priority: 'low',
+        status: 'resolved',
+        assignedDepartment: 'IT Support',
+        studentId: 's-1',
+        studentName: 'Student One',
+        createdAt: '2026-10-02T10:00:00Z',
+        resolvedAt: '2026-10-02T12:00:00Z',
+        updatedAt: '2026-10-02T12:00:00Z',
+        timeline: [],
+      },
+      {
+        id: 'dg-2',
+        ticketNumber: 'DG-2',
+        title: 'Fallback dept test',
+        description: 'Explicit fallback department',
+        category: 'electrical',
+        priority: 'low',
+        status: 'pending',
+        department: 'Estate Management',
+        studentId: 's-1',
+        studentName: 'Student One',
+        createdAt: '2026-10-02T10:00:00Z',
+        updatedAt: '2026-10-02T10:00:00Z',
+        timeline: [],
+      },
+    ];
+    setStorageItem(STORAGE_KEYS.COMPLAINTS, deptGroupFixtures);
+    const deptGroupRes = await analyticsService.getAnalytics('7d', { customNow: fixedNow });
+    const itDept = deptGroupRes.departmentPerformance.find((d) => d.department === 'IT Support');
+    const estateDept = deptGroupRes.departmentPerformance.find((d) => d.department === 'Estate Management');
+    assert(
+      itDept?.total === 1 && itDept?.resolved === 1 && estateDept?.total === 1 && estateDept?.pending === 1,
+      38,
+      'Complaints with explicit assignedDepartment or department are grouped under exact department names'
+    );
+
+    // -------------------------------------------------------------------------
+    // SECTION H: Future Resolution Timestamps & Average Resolution Time
+    // -------------------------------------------------------------------------
+    console.log('\n--- 8. Future Resolution Timestamps & Average Resolution Time ---');
+
+    // 39. Future resolvedAt relative to reference now is excluded from average resolution time
+    const futureResolvedFixtures: Complaint[] = [
+      {
+        id: 'fut-1',
+        ticketNumber: 'FUT-1',
+        title: 'Resolved in future',
+        description: 'Timestamp is after fixedNow',
+        category: 'electrical',
+        priority: 'low',
+        status: 'resolved',
+        studentId: 's-1',
+        studentName: 'Student One',
+        createdAt: '2026-10-02T10:00:00Z',
+        resolvedAt: '2026-10-06T10:00:00Z', // 2 days in future from 2026-10-04T12:00:00Z!
+        updatedAt: '2026-10-06T10:00:00Z',
+        timeline: [],
+      },
+      {
+        id: 'past-1',
+        ticketNumber: 'PST-1',
+        title: 'Resolved in past',
+        description: 'Valid 2 hour resolution',
+        category: 'electrical',
+        priority: 'low',
+        status: 'resolved',
+        studentId: 's-1',
+        studentName: 'Student One',
+        createdAt: '2026-10-02T10:00:00Z',
+        resolvedAt: '2026-10-02T12:00:00Z', // exactly 2.0 hours
+        updatedAt: '2026-10-02T12:00:00Z',
+        timeline: [],
+      },
+    ];
+    setStorageItem(STORAGE_KEYS.COMPLAINTS, futureResolvedFixtures);
+    const futureRes = await analyticsService.getAnalytics('7d', { customNow: fixedNow });
+    assert(
+      futureRes.avgResolutionTimeHours === 2.0,
+      39,
+      'Future resolvedAt is excluded from average resolution time calculation',
+      `expected 2.0 hours, got ${futureRes.avgResolutionTimeHours}`
+    );
+
+    // 40. Future timeline resolution event relative to reference now is excluded from average resolution time
+    const futureTimelineFixtures: Complaint[] = [
+      {
+        id: 'fut-timeline-1',
+        ticketNumber: 'FT-1',
+        title: 'Future timeline resolution',
+        description: 'Timeline timestamp is after fixedNow',
+        category: 'electrical',
+        priority: 'low',
+        status: 'resolved',
+        studentId: 's-1',
+        studentName: 'Student One',
+        createdAt: '2026-10-02T10:00:00Z',
+        updatedAt: '2026-10-02T10:00:00Z',
+        timeline: [
+          {
+            id: 'tl-1',
+            complaintId: 'fut-timeline-1',
+            status: 'resolved',
+            message: 'Fixed later in future',
+            timestamp: '2026-10-10T10:00:00Z', // 6 days in future!
+            actorName: 'Tech',
+            actorRole: 'staff',
+            isInternal: false,
+          },
+        ],
+      },
+      {
+        id: 'past-2',
+        ticketNumber: 'PST-2',
+        title: 'Resolved in past via timeline',
+        description: 'Valid 3 hour resolution via timeline',
+        category: 'electrical',
+        priority: 'low',
+        status: 'resolved',
+        studentId: 's-1',
+        studentName: 'Student One',
+        createdAt: '2026-10-02T10:00:00Z',
+        updatedAt: '2026-10-02T13:00:00Z',
+        timeline: [
+          {
+            id: 'tl-2',
+            complaintId: 'past-2',
+            status: 'resolved',
+            message: 'Fixed in 3 hours',
+            timestamp: '2026-10-02T13:00:00Z', // 3 hours duration
+            actorName: 'Tech',
+            actorRole: 'staff',
+            isInternal: false,
+          },
+        ],
+      },
+    ];
+    setStorageItem(STORAGE_KEYS.COMPLAINTS, futureTimelineFixtures);
+    const futTimelineRes = await analyticsService.getAnalytics('7d', { customNow: fixedNow });
+    assert(
+      futTimelineRes.avgResolutionTimeHours === 3.0,
+      40,
+      'Future timeline resolution timestamp is excluded from average resolution time',
+      `expected 3.0 hours, got ${futTimelineRes.avgResolutionTimeHours}`
+    );
+
+    // 41. Resolution timestamp preceding createdAt is excluded without replacing with zero
+    const negDurationFixtures: Complaint[] = [
+      {
+        id: 'neg-1',
+        ticketNumber: 'NEG-1',
+        title: 'Negative duration resolution',
+        description: 'resolved before created',
+        category: 'electrical',
+        priority: 'low',
+        status: 'resolved',
+        studentId: 's-1',
+        studentName: 'Student One',
+        createdAt: '2026-10-02T10:00:00Z',
+        resolvedAt: '2026-10-01T10:00:00Z', // resolved 24h BEFORE creation
+        updatedAt: '2026-10-02T10:00:00Z',
+        timeline: [],
+      },
+    ];
+    setStorageItem(STORAGE_KEYS.COMPLAINTS, negDurationFixtures);
+    const negRes = await analyticsService.getAnalytics('7d', { customNow: fixedNow });
+    assert(
+      negRes.avgResolutionTimeHours === null && negRes.avgResolutionTimeFormatted === 'N/A',
+      41,
+      'Resolution preceding creation is excluded and does not default to 0 hours'
+    );
+
+    // -------------------------------------------------------------------------
+    // SECTION I: Date Filter & Trend Chart Boundaries (Gaps, Overlaps, Exact Limits)
+    // -------------------------------------------------------------------------
+    console.log('\n--- 9. Date Filter & Trend Chart Boundaries Verification ---');
+
+    const ranges: DateRangeOption[] = ['7d', '30d', '3m', '6m', '1y'];
+
+    let allFirstMatch = true;
+    let allLastMatch = true;
+    let allZeroGaps = true;
+    let allZeroOverlaps = true;
+
+    for (const r of ranges) {
+      const window = getRangeWindow(r, fixedNow);
+      const trend = generateTrendData([], r, fixedNow);
+
+      if (trend.length === 0) {
+        allFirstMatch = false;
+        allLastMatch = false;
+        break;
+      }
+
+      // Exact first boundary
+      if (trend[0].startDate !== window.start.toISOString()) {
+        allFirstMatch = false;
+      }
+
+      // Exact last boundary
+      if (trend[trend.length - 1].endDate !== window.end.toISOString()) {
+        allLastMatch = false;
+      }
+
+      // Contiguity: adjacent end == start
+      for (let i = 0; i < trend.length - 1; i++) {
+        if (trend[i].endDate !== trend[i + 1].startDate) {
+          allZeroGaps = false;
+          allZeroOverlaps = false;
+        }
+        const endI = new Date(trend[i].endDate).getTime();
+        const startNext = new Date(trend[i + 1].startDate).getTime();
+        if (endI < startNext) allZeroGaps = false;
+        if (endI > startNext) allZeroOverlaps = false;
+      }
+    }
+
+    assert(allFirstMatch, 42, 'Exact first bucket boundary begins at range start for all 5 date ranges');
+    assert(allLastMatch, 43, 'Exact last bucket boundary ends at range end for all 5 date ranges');
+    assert(allZeroGaps, 44, 'Zero gaps between adjacent trend buckets across all 5 date ranges');
+    assert(allZeroOverlaps, 45, 'Zero overlapping intervals between adjacent trend buckets across all 5 date ranges');
+
+    // -------------------------------------------------------------------------
+    // SECTION J: Boundary Event Precision Testing
+    // -------------------------------------------------------------------------
+    console.log('\n--- 10. Boundary Event Precision Testing ---');
+
+    const win7d = getRangeWindow('7d', fixedNow);
+    const startMs = win7d.start.getTime();
+    const endMs = win7d.end.getTime();
+
+    const boundaryFixtures: Complaint[] = [
+      // Exact start boundary (t = startMs)
+      {
+        id: 'b-exact-start',
+        ticketNumber: 'BS-1',
+        title: 'Exact start boundary',
+        description: 'At startMs',
+        category: 'electrical',
+        priority: 'low',
+        status: 'pending',
+        studentId: 's-1',
+        studentName: 'Student One',
+        createdAt: new Date(startMs).toISOString(),
+        updatedAt: new Date(startMs).toISOString(),
+        timeline: [],
+      },
+      // Just before start boundary (t = startMs - 1ms)
+      {
+        id: 'b-before-start',
+        ticketNumber: 'BBS-1',
+        title: 'Just before start boundary',
+        description: 'At startMs - 1ms',
+        category: 'electrical',
+        priority: 'low',
+        status: 'pending',
+        studentId: 's-1',
+        studentName: 'Student One',
+        createdAt: new Date(startMs - 1).toISOString(),
+        updatedAt: new Date(startMs - 1).toISOString(),
+        timeline: [],
+      },
+      // Exact end boundary (t = endMs)
+      {
+        id: 'b-exact-end',
+        ticketNumber: 'BE-1',
+        title: 'Exact end boundary',
+        description: 'At endMs',
+        category: 'electrical',
+        priority: 'low',
+        status: 'pending',
+        studentId: 's-1',
+        studentName: 'Student One',
+        createdAt: new Date(endMs).toISOString(),
+        updatedAt: new Date(endMs).toISOString(),
+        timeline: [],
+      },
+      // Just after end boundary (t = endMs + 1ms)
+      {
+        id: 'b-after-end',
+        ticketNumber: 'BAE-1',
+        title: 'Just after end boundary',
+        description: 'At endMs + 1ms',
+        category: 'electrical',
+        priority: 'low',
+        status: 'pending',
+        studentId: 's-1',
+        studentName: 'Student One',
+        createdAt: new Date(endMs + 1).toISOString(),
+        updatedAt: new Date(endMs + 1).toISOString(),
+        timeline: [],
+      },
+    ];
+
+    setStorageItem(STORAGE_KEYS.COMPLAINTS, boundaryFixtures);
+    const bRes = await analyticsService.getAnalytics('7d', { customNow: fixedNow });
+
+    // Test 46: Exact start included
+    const b0Submitted = bRes.trendData[0].submitted;
+    assert(
+      b0Submitted === 1,
+      46,
+      'Event exactly on range start boundary (t = startMs) is included in first bucket',
+      `got bucket0 submitted=${b0Submitted}`
+    );
+
+    // Test 47: Just before start excluded
+    // Only 2 complaints should be counted in total (exact start and exact end)
+    assert(
+      bRes.totalComplaints === 2,
+      47,
+      'Event just before start boundary (t = startMs - 1ms) is strictly excluded'
+    );
+
+    // Test 48: Exact end included
+    const bLastSubmitted = bRes.trendData[bRes.trendData.length - 1].submitted;
+    assert(
+      bLastSubmitted === 1,
+      48,
+      'Event exactly on range end boundary (t = endMs) is included in last bucket',
+      `got last bucket submitted=${bLastSubmitted}`
+    );
+
+    // Test 49: Just after end excluded
+    assert(
+      !bRes.trendData.some((t) => t.submitted > 1) && bRes.totalComplaints === 2,
+      49,
+      'Event just after end boundary (t = endMs + 1ms) is strictly excluded'
+    );
+
+    // 50. Resolution events within range from complaints created before the range
+    const crossWindowFixtures: Complaint[] = [
+      // Created 5 days before startMs (outside 7d), but resolved 2 days after startMs (inside 7d)
+      {
+        id: 'cw-1',
+        ticketNumber: 'CW-1',
+        title: 'Cross window ticket',
+        description: 'Created before 7d window, resolved inside 7d window',
+        category: 'plumbing',
+        priority: 'high',
+        status: 'resolved',
+        studentId: 's-1',
+        studentName: 'Student One',
+        createdAt: new Date(startMs - 5 * 86400000).toISOString(),
+        resolvedAt: new Date(startMs + 2 * 86400000).toISOString(),
+        updatedAt: new Date(startMs + 2 * 86400000).toISOString(),
+        timeline: [],
+      },
+      // Created inside 7d and resolved inside 7d
+      {
+        id: 'cw-2',
+        ticketNumber: 'CW-2',
+        title: 'Inside window ticket',
+        description: 'Created and resolved inside 7d',
+        category: 'plumbing',
+        priority: 'low',
+        status: 'resolved',
+        studentId: 's-1',
+        studentName: 'Student One',
+        createdAt: new Date(startMs + 1 * 86400000).toISOString(),
+        resolvedAt: new Date(startMs + 3 * 86400000).toISOString(),
+        updatedAt: new Date(startMs + 3 * 86400000).toISOString(),
+        timeline: [],
+      },
+    ];
+    setStorageItem(STORAGE_KEYS.COMPLAINTS, crossWindowFixtures);
+    const cwRes = await analyticsService.getAnalytics('7d', { customNow: fixedNow });
+    const totalTrendResolved = cwRes.trendData.reduce((acc, t) => acc + t.resolved, 0);
+    const totalTrendSubmitted = cwRes.trendData.reduce((acc, t) => acc + t.submitted, 0);
+
+    assert(
+      totalTrendResolved === 2 && totalTrendSubmitted === 1 && cwRes.totalComplaints === 1,
+      50,
+      'Resolutions inside range for tickets created before range are counted in resolution trends, and trend submissions match KPI total exactly',
+      `resolvedCount=${totalTrendResolved}, submittedCount=${totalTrendSubmitted}, kpiTotal=${cwRes.totalComplaints}`
     );
   } finally {
     // Restore original complaints in storage
