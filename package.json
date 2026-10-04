@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test:integration": "tsx scripts/test_phase3_integration.ts",
-    "test:ui": "tsx scripts/test_phase8a_ui.ts"
+    "test:ui": "tsx scripts/test_phase8a_ui.ts",
+    "test:analytics": "tsx scripts/test_phase8b_analytics.ts"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

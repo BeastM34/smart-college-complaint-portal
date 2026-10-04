@@ -229,6 +229,68 @@ export interface AnalyticsSummary {
   }[];
 }
 
+export type DateRangeOption = '7d' | '30d' | '3m' | '6m' | '1y';
+
+export interface TrendDataPoint {
+  label: string;
+  startDate: string;
+  endDate: string;
+  submitted: number;
+  resolved: number;
+}
+
+export interface CategoryMetric {
+  category: string;
+  label: string;
+  count: number;
+  percentage: number;
+}
+
+export interface PriorityMetric {
+  priority: Priority;
+  label: string;
+  count: number;
+  percentage: number;
+}
+
+export interface StatusMetric {
+  status: ComplaintStatus;
+  label: string;
+  count: number;
+  percentage: number;
+}
+
+export interface DepartmentMetric {
+  department: string;
+  total: number;
+  resolved: number;
+  pending: number;
+  active: number;
+  resolutionRate: number;
+}
+
+export interface ComprehensiveAnalytics {
+  range: DateRangeOption;
+  periodLabel: string;
+  startDate: string;
+  endDate: string;
+  totalComplaints: number;
+  pendingComplaints: number;
+  assignedComplaints: number;
+  inProgressComplaints: number;
+  resolvedComplaints: number;
+  rejectedComplaints: number;
+  activeQueue: number;
+  resolutionRate: number;
+  avgResolutionTimeHours: number | null;
+  avgResolutionTimeFormatted: string;
+  trendData: TrendDataPoint[];
+  categoryDistribution: CategoryMetric[];
+  priorityDistribution: PriorityMetric[];
+  statusDistribution: StatusMetric[];
+  departmentPerformance: DepartmentMetric[];
+}
+
 export interface FilterOptions {
   status?: ComplaintStatus | 'all';
   priority?: Priority | 'all';
