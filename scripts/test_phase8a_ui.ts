@@ -1,5 +1,9 @@
 /**
- * Smart College Complaint Portal — Phase 8A UI & System Verification Suite
+ * Smart College Complaint Portal — Phase 8A UI State & Workflow Regression Suite
+ * 
+ * Verifies UI state persistence, theme preference storage, multi-role session
+ * routing, and UI action data contracts. (Visual rendering is certified via the
+ * Phase 8A UI Verification Checklist).
  */
 
 import { authService } from '../src/services/authService';
@@ -12,7 +16,7 @@ import { STORAGE_KEYS, getStorageItem, setStorageItem } from '../src/utils/stora
 
 async function runPhase8aTests() {
   console.log('======================================================================');
-  console.log('SMART COLLEGE COMPLAINT PORTAL — PHASE 8A UI & SYSTEM VERIFICATION');
+  console.log('SMART COLLEGE COMPLAINT PORTAL — PHASE 8A UI STATE & WORKFLOW SUITE');
   console.log('======================================================================\n');
 
   let passed = 0;
