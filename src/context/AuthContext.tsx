@@ -63,11 +63,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Centralized session initialization on mount and storage synchronization
   useEffect(() => {
-    try {
-      validateSession();
-    } finally {
-      setIsLoading(false);
-    }
+    let isMounted = true;
+
+    const initSession = async () => {
+      try {
+        validateSession();
+        const freshUser = await authService.restoreSession();
+        if (isMounted && freshUser) {
+          setUser(freshUser);
+        }
+      } catch {
+        // preserve local session state
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    initSession();
 
     const handleStorageChange = (e: StorageEvent) => {
       if (!e.key || e.key === STORAGE_KEYS.SESSION || e.key === STORAGE_KEYS.USERS) {
@@ -75,7 +89,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
     window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, [validateSession]);
 
   const getCurrentUser = useCallback(() => {

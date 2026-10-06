@@ -38,6 +38,7 @@ import { useToast } from '@/hooks/useToast';
 import { complaintService } from '@/services/complaintService';
 import { categoryService } from '@/services/categoryService';
 import { settingsService } from '@/services/settingsService';
+import { isQuotaExceededError } from '@/utils/storage';
 import type { Priority, ComplaintCategory, Complaint, CategoryItem } from '@/types';
 
 // Step definitions
@@ -143,6 +144,7 @@ export const NewComplaintPage: React.FC = () => {
   // Form State
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [submittedComplaint, setSubmittedComplaint] = useState<Complaint | null>(null);
 
   // Step 1: Basic Info
@@ -432,6 +434,7 @@ export const NewComplaintPage: React.FC = () => {
     }
 
     setIsSubmitting(true);
+    setSubmissionError(null);
     try {
       const attachmentsList = attachments.map((a) => a.dataUrl);
 
@@ -459,7 +462,17 @@ export const NewComplaintPage: React.FC = () => {
         'Complaint Submitted'
       );
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to submit complaint';
+      let msg = 'Failed to submit complaint';
+      if (
+        isQuotaExceededError(err) ||
+        (err instanceof Error && /storage.*full|quota.*exceeded/i.test(err.message))
+      ) {
+        msg =
+          'Unable to save your complaint because browser storage is full. Please remove some stored demo data or reset Demo Mode and try again.';
+      } else if (err instanceof Error) {
+        msg = err.message;
+      }
+      setSubmissionError(msg);
       toastError(msg, 'Submission Failed');
     } finally {
       setIsSubmitting(false);
@@ -478,6 +491,7 @@ export const NewComplaintPage: React.FC = () => {
     setAdditionalDetails('');
     setAttachments([]);
     setAttachmentError(null);
+    setSubmissionError(null);
     setErrors({});
     setSubmittedComplaint(null);
     setCurrentStep(1);
@@ -1194,6 +1208,24 @@ export const NewComplaintPage: React.FC = () => {
             </CardHeader>
 
             <CardContent className="space-y-6">
+              {/* Submission Error Alert */}
+              {submissionError && (
+                <div
+                  role="alert"
+                  className="p-4 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50/90 dark:bg-rose-950/40 text-xs flex items-start gap-3 text-rose-900 dark:text-rose-200 shadow-xs"
+                >
+                  <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-bold text-sm text-rose-800 dark:text-rose-300">
+                      Submission Failed
+                    </p>
+                    <p className="leading-relaxed text-slate-700 dark:text-slate-300">
+                      {submissionError}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Summary Cards */}
 
               {/* Section 1: Basic Info */}

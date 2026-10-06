@@ -29,6 +29,7 @@ import {
   SkeletonLoader,
 } from '@/components/common';
 import { useNotifications } from '@/hooks/useNotifications';
+import { useToast } from '@/hooks/useToast';
 import type { Notification, NotificationType } from '@/types';
 
 type NotificationFilter = 'all' | 'unread' | 'complaints' | 'system';
@@ -36,7 +37,39 @@ type NotificationFilter = 'all' | 'unread' | 'complaints' | 'system';
 export const StudentNotificationsPage: React.FC = () => {
   const { notifications, unreadCount, loading, markAsRead, markAllAsRead, deleteNotification } =
     useNotifications();
+  const { success, error: toastError } = useToast();
   const [activeFilter, setActiveFilter] = useState<NotificationFilter>('all');
+  const [markingAll, setMarkingAll] = useState(false);
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+
+  const handleMarkAllAsRead = async () => {
+    if (markingAll) return;
+    setMarkingAll(true);
+    try {
+      await markAllAsRead();
+      success('All notifications marked as read.');
+    } catch (err: any) {
+      toastError(err.message || 'Failed to mark all notifications as read.');
+    } finally {
+      setMarkingAll(false);
+    }
+  };
+
+  const handleMarkAsRead = async (id: string) => {
+    if (pendingIds.has(id)) return;
+    setPendingIds((prev) => new Set(prev).add(id));
+    try {
+      await markAsRead(id);
+    } catch (err: any) {
+      toastError(err.message || 'Failed to mark notification as read.');
+    } finally {
+      setPendingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
 
   // Filtered notifications
   const filteredNotifications = useMemo(() => {
@@ -132,7 +165,9 @@ export const StudentNotificationsPage: React.FC = () => {
           <Button
             variant="outline"
             size="sm"
-            onClick={markAllAsRead}
+            onClick={handleMarkAllAsRead}
+            isLoading={markingAll}
+            disabled={markingAll}
             leftIcon={<CheckCheck className="w-4 h-4 text-indigo-600" />}
             className="shrink-0"
           >
@@ -256,11 +291,11 @@ export const StudentNotificationsPage: React.FC = () => {
                       </p>
 
                       {/* Related Ticket Link */}
-                      {n.link && (
+                      {(n.link || n.complaintId) && (
                         <div className="pt-1.5">
                           <Link
-                            to={n.link}
-                            onClick={() => !n.read && markAsRead(n.id)}
+                            to={n.link || `/student/complaints/${n.complaintId}`}
+                            onClick={() => !n.read && handleMarkAsRead(n.id)}
                             className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline"
                           >
                             <span>View Complaint Details</span>
@@ -276,8 +311,9 @@ export const StudentNotificationsPage: React.FC = () => {
                     {!n.read && (
                       <button
                         type="button"
-                        onClick={() => markAsRead(n.id)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors"
+                        onClick={() => handleMarkAsRead(n.id)}
+                        disabled={pendingIds.has(n.id)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors cursor-pointer disabled:opacity-50"
                         title="Mark as read"
                       >
                         <Check className="w-4 h-4" />

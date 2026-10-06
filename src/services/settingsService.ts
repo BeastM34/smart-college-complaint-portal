@@ -8,8 +8,58 @@ import {
   MOCK_CATEGORIES,
   MOCK_BROADCASTS,
 } from '@/data/mockData';
+import { apiClient } from './apiClient';
+import { authService } from './authService';
 
 const VALID_PRIORITIES: Priority[] = ['low', 'medium', 'high', 'critical'];
+
+/**
+ * Maps backend snake_case SystemSettings to frontend camelCase SystemSettings.
+ */
+export function mapBackendSettings(b: any): SystemSettings {
+  return {
+    portalName: b.portal_name ?? b.portalName ?? 'Smart College Complaint Portal',
+    academicYear: b.academic_year ?? b.academicYear ?? '2026-2027',
+    allowStudentRegistration: b.allow_student_registration ?? b.allowStudentRegistration ?? true,
+    emailNotifications: b.email_notifications ?? b.emailNotifications ?? true,
+    smsNotifications: b.sms_notifications ?? b.smsNotifications ?? false,
+    pushNotifications: b.push_notifications ?? b.pushNotifications ?? true,
+    studentNotifications: b.student_notifications ?? b.studentNotifications ?? true,
+    maintenanceMode: b.maintenance_mode ?? b.maintenanceMode ?? false,
+    autoAssignComplaints: b.auto_assign_complaints ?? b.autoAssignComplaints ?? true,
+    defaultPriority: b.default_priority ?? b.defaultPriority ?? 'medium',
+    allowReopening: b.allow_reopening ?? b.allowReopening ?? true,
+    allowAnonymousComplaints: b.allow_anonymous_complaints ?? b.allowAnonymousComplaints ?? false,
+    maxAttachmentsPerComplaint: b.max_attachments_per_complaint ?? b.maxAttachmentsPerComplaint ?? 3,
+    maxAttachmentSizeMB: b.max_attachment_size_mb ?? b.maxAttachmentSizeMB ?? 5,
+    supportEmail: b.support_email ?? b.supportEmail ?? 'support@college.edu',
+    supportPhone: b.support_phone ?? b.supportPhone ?? '+1 (555) 019-2834',
+  };
+}
+
+/**
+ * Maps frontend camelCase SystemSettings to backend snake_case partial payload.
+ */
+export function toBackendSettings(s: Partial<SystemSettings>): Record<string, any> {
+  const b: Record<string, any> = {};
+  if (s.portalName !== undefined) b.portal_name = s.portalName;
+  if (s.academicYear !== undefined) b.academic_year = s.academicYear;
+  if (s.allowStudentRegistration !== undefined) b.allow_student_registration = s.allowStudentRegistration;
+  if (s.emailNotifications !== undefined) b.email_notifications = s.emailNotifications;
+  if (s.smsNotifications !== undefined) b.sms_notifications = s.smsNotifications;
+  if (s.pushNotifications !== undefined) b.push_notifications = s.pushNotifications;
+  if (s.studentNotifications !== undefined) b.student_notifications = s.studentNotifications;
+  if (s.maintenanceMode !== undefined) b.maintenance_mode = s.maintenanceMode;
+  if (s.autoAssignComplaints !== undefined) b.auto_assign_complaints = s.autoAssignComplaints;
+  if (s.defaultPriority !== undefined) b.default_priority = s.defaultPriority;
+  if (s.allowReopening !== undefined) b.allow_reopening = s.allowReopening;
+  if (s.allowAnonymousComplaints !== undefined) b.allow_anonymous_complaints = s.allowAnonymousComplaints;
+  if (s.maxAttachmentsPerComplaint !== undefined) b.max_attachments_per_complaint = s.maxAttachmentsPerComplaint;
+  if (s.maxAttachmentSizeMB !== undefined) b.max_attachment_size_mb = s.maxAttachmentSizeMB;
+  if (s.supportEmail !== undefined) b.support_email = s.supportEmail;
+  if (s.supportPhone !== undefined) b.support_phone = s.supportPhone;
+  return b;
+}
 
 /**
  * Settings Service
@@ -146,12 +196,45 @@ class SettingsService {
   }
 
   public async getSettings(): Promise<SystemSettings> {
+    try {
+      const res = await apiClient.get<any>('/settings');
+      if (res && res.success && res.data) {
+        const mapped = mapBackendSettings(res.data);
+        setStorageItem(STORAGE_KEYS.SETTINGS, mapped);
+        return mapped;
+      }
+    } catch (err: any) {
+      if (err?.status === 401 || err?.status === 403) {
+        if (!authService.isAuthenticated()) throw err;
+      }
+      // Offline fallback
+    }
+
     return this.getSettingsSync();
   }
 
   public async updateSettings(data: Partial<SystemSettings>): Promise<SystemSettings> {
-    this.ensureInitialized();
+    const currentUser = authService.getCurrentUser();
+    if (currentUser && currentUser.role !== 'admin') {
+      throw new Error('Unauthorized: Only administrators are permitted to perform this action.');
+    }
 
+    try {
+      const backendPayload = toBackendSettings(data);
+      const res = await apiClient.patch<any>('/settings', backendPayload);
+      if (res && res.success && res.data) {
+        const mapped = mapBackendSettings(res.data);
+        setStorageItem(STORAGE_KEYS.SETTINGS, mapped);
+        return mapped;
+      }
+    } catch (err: any) {
+      if (err?.status === 400 || err?.status === 401 || err?.status === 403) {
+        throw new Error(err.message || 'Failed to update system settings.');
+      }
+      // Offline fallback
+    }
+
+    this.ensureInitialized();
     // Guard: Require an authenticated active administrator in USERS records
     this.assertAdminSession();
 

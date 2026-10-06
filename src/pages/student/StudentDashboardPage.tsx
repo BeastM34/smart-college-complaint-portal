@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   FileText,
@@ -90,6 +90,20 @@ export const StudentDashboardPage: React.FC = () => {
   useEffect(() => {
     loadDashboardData();
   }, [loadDashboardData]);
+
+  // Memoized deduplication ensuring 100% unique sibling keys when rendering complaints
+  const uniqueComplaints = useMemo(() => {
+    const seen = new Set<string>();
+    const result: Complaint[] = [];
+    for (const c of complaints) {
+      if (!c || !c.id) continue;
+      const idKey = c.id.trim().toLowerCase();
+      if (seen.has(idKey)) continue;
+      seen.add(idKey);
+      result.push(c);
+    }
+    return result;
+  }, [complaints]);
 
   // Helper for status badge formatting
   const formatStatus = (status: ComplaintStatus) => {
@@ -402,7 +416,7 @@ export const StudentDashboardPage: React.FC = () => {
             <div className="flex items-center gap-2">
               <CardTitle className="text-lg">Recent Complaints</CardTitle>
               <Badge variant="default" size="sm">
-                {complaints.length} Total
+                {uniqueComplaints.length} Total
               </Badge>
             </div>
             <CardDescription>
@@ -428,7 +442,7 @@ export const StudentDashboardPage: React.FC = () => {
             <div className="space-y-3 py-4">
               <SkeletonLoader count={5} height="2.5rem" />
             </div>
-          ) : complaints.length === 0 ? (
+          ) : uniqueComplaints.length === 0 ? (
             <EmptyState
               title="No complaints submitted yet"
               description="Report your first maintenance issue using the button below to alert our staff."
@@ -458,7 +472,7 @@ export const StudentDashboardPage: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                    {complaints.slice(0, 6).map((c) => (
+                    {uniqueComplaints.slice(0, 6).map((c) => (
                       <tr
                         key={c.id}
                         className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors group"
@@ -522,7 +536,7 @@ export const StudentDashboardPage: React.FC = () => {
 
               {/* Mobile Card View (visible on small mobile screens) */}
               <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
-                {complaints.slice(0, 5).map((c) => (
+                {uniqueComplaints.slice(0, 5).map((c) => (
                   <div key={c.id} className="py-4 space-y-2.5">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-mono font-semibold text-slate-800 dark:text-slate-200">

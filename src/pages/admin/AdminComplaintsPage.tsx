@@ -250,8 +250,9 @@ export const AdminComplaintsPage: React.FC = () => {
       setSelectedIds([]);
       setBulkComment('');
       await loadComplaints();
-    } catch (err) {
-      toastError('Failed to execute bulk update', 'Error');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to execute bulk update';
+      toastError(msg, 'Error');
       console.error(err);
     } finally {
       setIsSubmittingBulk(false);

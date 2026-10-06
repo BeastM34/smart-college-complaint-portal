@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Production build output
+dist/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# System and Editor files
+.DS_Store
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln

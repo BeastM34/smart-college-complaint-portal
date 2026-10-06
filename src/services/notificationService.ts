@@ -3,6 +3,26 @@ import { STORAGE_KEYS, getStorageItem, setStorageItem } from '@/utils/storage';
 import { MOCK_NOTIFICATIONS, MOCK_BROADCASTS, MOCK_USERS } from '@/data/mockData';
 import { authService } from './authService';
 import { settingsService } from './settingsService';
+import { apiClient } from './apiClient';
+
+/**
+ * Maps a backend Notification record to frontend Notification model.
+ */
+export function mapBackendNotification(n: any): Notification {
+  return {
+    id: n.id,
+    userId: n.user_id || n.userId,
+    title: n.title,
+    message: n.message,
+    type: n.type || 'info',
+    category: n.category || undefined,
+    complaintId: n.complaint_id || n.complaintId || undefined,
+    broadcastId: n.broadcast_id || n.broadcastId || undefined,
+    read: Boolean(n.read),
+    link: n.link || undefined,
+    createdAt: n.created_at || n.createdAt || new Date().toISOString(),
+  };
+}
 
 export interface SendBroadcastPayload {
   title: string;
@@ -60,17 +80,31 @@ class NotificationService {
     }
   }
 
-  public async getNotifications(userId: string): Promise<Notification[]> {
+  public async getNotifications(userId?: string): Promise<Notification[]> {
+    // Attempt real backend API first
+    try {
+      const res = await apiClient.get<any[]>('/notifications');
+      if (res && res.success && Array.isArray(res.data)) {
+        return res.data.map(mapBackendNotification);
+      }
+    } catch (err: any) {
+      if (err?.status) {
+        throw new Error(err.message || 'Failed to retrieve notifications.');
+      }
+      // Offline fallback only when network connection failed
+    }
+
     this.ensureInitialized();
     const currentUser = authService.getCurrentUser();
     if (!currentUser) {
       throw new Error('Unauthorized: An authenticated session is required to retrieve notifications.');
     }
 
+    const targetUserId = userId || currentUser.id;
     if (currentUser.role !== 'admin') {
       const isSelf =
-        userId === currentUser.id ||
-        (currentUser.studentId && userId.toLowerCase() === currentUser.studentId.toLowerCase());
+        targetUserId === currentUser.id ||
+        (currentUser.studentId && targetUserId.toLowerCase() === currentUser.studentId.toLowerCase());
       if (!isSelf) {
         throw new Error('Unauthorized: You can only retrieve notifications for your own account.');
       }
@@ -87,7 +121,7 @@ class NotificationService {
     const seenDirectIds = new Set<string>();
 
     for (const notif of notifications) {
-      if (notif.userId === userId && !seenDirectIds.has(notif.id)) {
+      if (notif.userId === targetUserId && !seenDirectIds.has(notif.id)) {
         // Prevent duplicate direct copies for the same recipient and broadcast
         if (notif.broadcastId) {
           if (directBroadcastIds.has(notif.broadcastId)) {
@@ -101,11 +135,6 @@ class NotificationService {
     }
 
     // 2. Global wildcard broadcast notifications ('all', 'all_students')
-    // Identify duplicate copies belonging to the same broadcast using broadcastId relationship.
-    // If a broadcastId is present on a global notification and the student already received
-    // a direct notification for that exact broadcastId, the global duplicate is skipped.
-    // If reliable identification of an old notification is impossible because previous data
-    // does not contain a broadcast identifier, preserve it rather than guessing and deleting it.
     const eligibleGlobalNotifs: Notification[] = [];
     const seenGlobalBroadcastIds = new Set<string>();
     const seenGlobalIds = new Set<string>();
@@ -115,18 +144,15 @@ class NotificationService {
         seenGlobalIds.add(notif.id);
 
         if (notif.broadcastId) {
-          // If the student already received an individual direct copy for this broadcast, skip global copy
           if (directBroadcastIds.has(notif.broadcastId)) {
             continue;
           }
-          // Prevent multiple global duplicate entries with the same broadcastId
           if (seenGlobalBroadcastIds.has(notif.broadcastId)) {
             continue;
           }
           seenGlobalBroadcastIds.add(notif.broadcastId);
         }
 
-        // If no broadcastId is present (legacy data) or no direct copy exists, preserve the notification
         eligibleGlobalNotifs.push(notif);
       }
     }
@@ -143,12 +169,36 @@ class NotificationService {
     return this.getNotifications(userId);
   }
 
-  public async getUnreadCount(userId: string): Promise<number> {
+  public async getUnreadCount(userId?: string): Promise<number> {
+    try {
+      const res = await apiClient.get('/notifications/unread-count');
+      if (res && res.success && typeof res.data?.count === 'number') {
+        return res.data.count;
+      }
+    } catch (err: any) {
+      if (err?.status) {
+        throw new Error(err.message || 'Failed to retrieve unread notification count.');
+      }
+      // Offline fallback only when network connection failed
+    }
+
     const list = await this.getNotifications(userId);
     return list.filter((n) => !n.read).length;
   }
 
   public async markAsRead(id: string): Promise<Notification> {
+    try {
+      const res = await apiClient.patch(`/notifications/${encodeURIComponent(id)}/read`);
+      if (res && res.success && res.data) {
+        return mapBackendNotification(res.data);
+      }
+    } catch (err: any) {
+      if (err?.status) {
+        throw new Error(err.message || 'Failed to mark notification as read.');
+      }
+      // Offline fallback only when network connection failed
+    }
+
     this.ensureInitialized();
     const currentUser = authService.getCurrentUser();
     if (!currentUser) {
@@ -182,17 +232,30 @@ class NotificationService {
     return notifications[index];
   }
 
-  public async markAllAsRead(userId: string): Promise<void> {
+  public async markAllAsRead(userId?: string): Promise<void> {
+    try {
+      const res = await apiClient.patch('/notifications/read-all');
+      if (res && res.success) {
+        return;
+      }
+    } catch (err: any) {
+      if (err?.status) {
+        throw new Error(err.message || 'Failed to mark all notifications as read.');
+      }
+      // Offline fallback only when network connection failed
+    }
+
     this.ensureInitialized();
     const currentUser = authService.getCurrentUser();
     if (!currentUser) {
       throw new Error('Unauthorized: An authenticated session is required to mark notifications as read.');
     }
 
+    const targetUserId = userId || currentUser.id;
     if (currentUser.role !== 'admin') {
       const isSelf =
-        userId === currentUser.id ||
-        (currentUser.studentId && userId.toLowerCase() === currentUser.studentId.toLowerCase());
+        targetUserId === currentUser.id ||
+        (currentUser.studentId && targetUserId.toLowerCase() === currentUser.studentId.toLowerCase());
       if (!isSelf) {
         throw new Error('Unauthorized: You can only mark notifications for your own account.');
       }
@@ -203,11 +266,10 @@ class NotificationService {
       MOCK_NOTIFICATIONS
     );
     const updated = notifications.map((n) =>
-      n.userId === userId || n.userId === 'all' || n.userId === 'all_students'
+      n.userId === targetUserId || n.userId === 'all' || n.userId === 'all_students'
         ? { ...n, read: true }
         : n
     );
-    setStorageItem(STORAGE_KEYS.NOTIFICATIONS, updated);
   }
 
   public async deleteNotification(id: string): Promise<void> {

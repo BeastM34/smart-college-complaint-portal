@@ -60,7 +60,17 @@ export const AdminDashboardPage: React.FC = () => {
 
   // Urgent complaints: critical or high priority that are not resolved or rejected
   const urgentComplaints = useMemo(() => {
-    return complaints
+    const seen = new Set<string>();
+    const uniqueList: Complaint[] = [];
+    for (const c of complaints) {
+      if (!c || !c.id) continue;
+      const idKey = c.id.trim().toLowerCase();
+      if (seen.has(idKey)) continue;
+      seen.add(idKey);
+      uniqueList.push(c);
+    }
+
+    return uniqueList
       .filter(
         (c) =>
           (c.priority === 'critical' || c.priority === 'high') &&

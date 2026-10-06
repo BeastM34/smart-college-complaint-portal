@@ -9,7 +9,12 @@
     "preview": "vite preview",
     "test:integration": "tsx scripts/test_phase3_integration.ts",
     "test:ui": "tsx scripts/test_phase8a_ui.ts",
-    "test:analytics": "tsx scripts/test_phase8b_analytics.ts"
+    "test:analytics": "tsx scripts/test_phase8b_analytics.ts",
+    "test:e2e": "tsx scripts/test_phase8c_e2e.ts",
+    "test:api": "tsx scripts/test_phase5a_api_integration.ts",
+    "test:workflow-api": "tsx scripts/test_phase5b_workflow_integration.ts",
+    "test:notifications-api": "tsx scripts/test_phase5c_notifications_integration.ts",
+    "test:admin-api": "tsx scripts/test_phase5d_admin_integration.ts"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -25,6 +30,7 @@
     "vite": "^8.3.0"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
     "clsx": "^2.1.1",
     "lucide-react": "^1.49.0",
     "react": "^19.3.0",

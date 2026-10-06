@@ -153,6 +153,11 @@ export const ComplaintDetailPage: React.FC = () => {
       return;
     }
 
+    if (reopenReason.trim().length < 5) {
+      toastError('Reopen reason must be at least 5 characters long.', 'Reason Required');
+      return;
+    }
+
     setReopening(true);
     try {
       const updated = await complaintService.reopenComplaint(complaint.id, reopenReason.trim());
@@ -771,7 +776,7 @@ export const ComplaintDetailPage: React.FC = () => {
               size="sm"
               onClick={handleReopen}
               isLoading={reopening}
-              disabled={!reopenReason.trim()}
+              disabled={!reopenReason.trim() || reopenReason.trim().length < 5 || reopening}
               className="bg-amber-600 hover:bg-amber-700 text-white"
             >
               Confirm Reopen

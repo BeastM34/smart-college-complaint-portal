@@ -13,6 +13,7 @@ import type {
 } from '@/types';
 import { STORAGE_KEYS, getStorageItem } from '@/utils/storage';
 import { authService } from './authService';
+import { apiClient } from './apiClient';
 
 /**
  * Known human-friendly category display labels
@@ -475,9 +476,42 @@ class AnalyticsService {
    */
   public async getAnalytics(
     range: DateRangeOption = '30d',
-    options?: { customNow?: Date }
+    options?: {
+      customNow?: Date;
+      category?: string;
+      priority?: string;
+      status?: string;
+      department?: string;
+      startDate?: string;
+      endDate?: string;
+    }
   ): Promise<ComprehensiveAnalytics> {
     this.ensureAdmin();
+
+    // Query live backend endpoint when online and not executing deterministic customNow unit tests
+    if (!options?.customNow) {
+      try {
+        const params = new URLSearchParams();
+        if (range) params.append('range', range);
+        if (options?.category) params.append('category', options.category);
+        if (options?.priority) params.append('priority', options.priority);
+        if (options?.status) params.append('status', options.status);
+        if (options?.department) params.append('department', options.department);
+        if (options?.startDate) params.append('startDate', options.startDate);
+        if (options?.endDate) params.append('endDate', options.endDate);
+
+        const qs = params.toString() ? `?${params.toString()}` : '';
+        const res = await apiClient.get<ComprehensiveAnalytics>(`/analytics${qs}`);
+        if (res && res.success && res.data) {
+          return res.data;
+        }
+      } catch (err: any) {
+        if (err?.status === 400 || err?.status === 401 || err?.status === 403) {
+          throw new Error(err.message || 'Failed to retrieve analytics.');
+        }
+        // Offline fallback for headless tests
+      }
+    }
 
     const rawComplaints = getStorageItem<unknown>(STORAGE_KEYS.COMPLAINTS, []);
     const allComplaints: Complaint[] = Array.isArray(rawComplaints) ? rawComplaints : [];

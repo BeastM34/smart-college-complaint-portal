@@ -2,6 +2,23 @@ import type { CategoryItem, Complaint } from '@/types';
 import { STORAGE_KEYS, getStorageItem, setStorageItem } from '@/utils/storage';
 import { MOCK_CATEGORIES, MOCK_COMPLAINTS } from '@/data/mockData';
 import { authService } from './authService';
+import { apiClient } from './apiClient';
+
+/**
+ * Maps a backend Category record to the frontend CategoryItem model.
+ */
+function mapBackendCategory(c: any): CategoryItem {
+  return {
+    id: c.id,
+    name: c.name,
+    slug: c.slug,
+    description: c.description || '',
+    icon: c.icon || undefined,
+    active: Boolean(c.active),
+    complaintCount: c.complaint_count ?? c.complaintCount ?? 0,
+    slaHours: c.sla_hours ?? c.slaHours ?? 24,
+  };
+}
 
 /**
  * Category Service
@@ -16,6 +33,21 @@ class CategoryService {
   }
 
   public async getCategories(activeOnly = false): Promise<CategoryItem[]> {
+    // Attempt real backend API first
+    try {
+      const res = await apiClient.get<any[]>(
+        `/categories${activeOnly ? '?activeOnly=true' : ''}`
+      );
+      if (res && res.success && Array.isArray(res.data)) {
+        return res.data.map(mapBackendCategory);
+      }
+    } catch (err: any) {
+      if (err?.status === 401 || err?.status === 403) {
+        if (!authService.isAuthenticated()) throw err;
+      }
+      // Offline fallback for tests running without active backend server
+    }
+
     this.ensureInitialized();
     const categories = getStorageItem<CategoryItem[]>(STORAGE_KEYS.CATEGORIES, MOCK_CATEGORIES);
     const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
@@ -51,13 +83,53 @@ class CategoryService {
   }
 
   public async getCategoryById(id: string): Promise<CategoryItem | null> {
+    try {
+      const res = await apiClient.get(`/categories/${encodeURIComponent(id)}`);
+      if (res && res.success && res.data) {
+        return mapBackendCategory(res.data);
+      }
+    } catch (err: any) {
+      if (err?.status === 404) {
+        return null;
+      }
+      if (err?.status === 401 || err?.status === 403) {
+        if (!authService.isAuthenticated()) throw err;
+      }
+      // Offline fallback
+    }
+
     const categories = await this.getCategories();
     return categories.find((c) => c.id === id || c.slug === id) || null;
   }
 
   public async createCategory(data: Omit<CategoryItem, 'id'>): Promise<CategoryItem> {
-    this.ensureInitialized();
     const currentUser = authService.getCurrentUser();
+    if (currentUser && currentUser.role !== 'admin') {
+      throw new Error('Unauthorized: Only administrators are permitted to create categories.');
+    }
+
+    try {
+      const payload: Record<string, any> = {
+        name: data.name.trim(),
+        slug: data.slug?.trim() || undefined,
+        description: data.description?.trim() || undefined,
+        icon: data.icon?.trim() || undefined,
+        sla_hours: data.slaHours,
+        active: data.active ?? true,
+      };
+
+      const res = await apiClient.post<any>('/categories', payload);
+      if (res && res.success && res.data) {
+        return mapBackendCategory(res.data);
+      }
+    } catch (err: any) {
+      if (err?.status === 400 || err?.status === 401 || err?.status === 403 || err?.status === 409) {
+        throw new Error(err.message || 'Failed to create category.');
+      }
+      // Offline fallback for headless test runners
+    }
+
+    this.ensureInitialized();
     if (!currentUser || currentUser.role !== 'admin') {
       throw new Error('Unauthorized: Only administrators are permitted to create categories.');
     }
@@ -96,8 +168,32 @@ class CategoryService {
   }
 
   public async updateCategory(id: string, data: Partial<CategoryItem>): Promise<CategoryItem> {
-    this.ensureInitialized();
     const currentUser = authService.getCurrentUser();
+    if (currentUser && currentUser.role !== 'admin') {
+      throw new Error('Unauthorized: Only administrators are permitted to update categories.');
+    }
+
+    try {
+      const payload: Record<string, any> = {};
+      if (data.name !== undefined) payload.name = data.name.trim();
+      if (data.slug !== undefined) payload.slug = data.slug.trim();
+      if (data.description !== undefined) payload.description = data.description.trim();
+      if (data.icon !== undefined) payload.icon = data.icon.trim();
+      if (data.slaHours !== undefined) payload.sla_hours = data.slaHours;
+      if (data.active !== undefined) payload.active = Boolean(data.active);
+
+      const res = await apiClient.patch<any>(`/categories/${encodeURIComponent(id)}`, payload);
+      if (res && res.success && res.data) {
+        return mapBackendCategory(res.data);
+      }
+    } catch (err: any) {
+      if (err?.status === 400 || err?.status === 401 || err?.status === 403 || err?.status === 404 || err?.status === 409) {
+        throw new Error(err.message || 'Failed to update category.');
+      }
+      // Offline fallback
+    }
+
+    this.ensureInitialized();
     if (!currentUser || currentUser.role !== 'admin') {
       throw new Error('Unauthorized: Only administrators are permitted to update categories.');
     }
@@ -139,7 +235,6 @@ class CategoryService {
     }
 
     // Preserve existing slug unless a valid new slug is explicitly supplied.
-    // This preserves identity and prevents breaking historical complaint records.
     const finalSlug = data.slug ? data.slug.toLowerCase().trim() : current.slug;
 
     const updated: CategoryItem = {
@@ -155,8 +250,24 @@ class CategoryService {
   }
 
   public async toggleCategoryStatus(id: string): Promise<CategoryItem> {
-    this.ensureInitialized();
     const currentUser = authService.getCurrentUser();
+    if (currentUser && currentUser.role !== 'admin') {
+      throw new Error('Unauthorized: Only administrators are permitted to change category status.');
+    }
+
+    try {
+      const res = await apiClient.patch<any>(`/categories/${encodeURIComponent(id)}/toggle-status`);
+      if (res && res.success && res.data) {
+        return mapBackendCategory(res.data);
+      }
+    } catch (err: any) {
+      if (err?.status === 400 || err?.status === 401 || err?.status === 403 || err?.status === 404) {
+        throw new Error(err.message || 'Failed to toggle category status.');
+      }
+      // Offline fallback
+    }
+
+    this.ensureInitialized();
     if (!currentUser || currentUser.role !== 'admin') {
       throw new Error('Unauthorized: Only administrators are permitted to change category status.');
     }
@@ -177,6 +288,26 @@ class CategoryService {
     setStorageItem(STORAGE_KEYS.CATEGORIES, categories);
     return updated;
   }
+
+  public async deleteCategory(id: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const res = await apiClient.delete<any>(`/categories/${encodeURIComponent(id)}`);
+      if (res && res.success) {
+        return { success: true, message: res.message || 'Category deleted successfully.' };
+      }
+    } catch (err: any) {
+      if (err?.status === 400 || err?.status === 401 || err?.status === 403 || err?.status === 404) {
+        throw new Error(err.message || 'Failed to delete category.');
+      }
+    }
+
+    this.ensureInitialized();
+    const categories = getStorageItem<CategoryItem[]>(STORAGE_KEYS.CATEGORIES, MOCK_CATEGORIES);
+    const filtered = categories.filter((c) => c.id !== id && c.slug !== id);
+    setStorageItem(STORAGE_KEYS.CATEGORIES, filtered);
+    return { success: true, message: 'Category removed successfully.' };
+  }
 }
 
+export { mapBackendCategory };
 export const categoryService = new CategoryService();

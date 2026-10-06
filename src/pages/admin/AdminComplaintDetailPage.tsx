@@ -38,6 +38,7 @@ import {
   EmptyState,
 } from '@/components/common';
 import { complaintService } from '@/services/complaintService';
+import { userService } from '@/services/userService';
 import { useToast } from '@/hooks/useToast';
 import { MOCK_STAFF, MOCK_DEPARTMENTS } from '@/data/mockData';
 import type { Complaint, ComplaintStatus, Priority, StaffMember } from '@/types';
@@ -60,6 +61,7 @@ export const AdminComplaintDetailPage: React.FC = () => {
 
   // Assign Modal State
   const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [staffMembers, setStaffMembers] = useState<any[]>(MOCK_STAFF);
   const [selectedStaffId, setSelectedStaffId] = useState(MOCK_STAFF[0].id);
   const [selectedDepartment, setSelectedDepartment] = useState<string>(MOCK_DEPARTMENTS[0]);
   const [assignNotifyStudent, setAssignNotifyStudent] = useState(true);
@@ -77,6 +79,23 @@ export const AdminComplaintDetailPage: React.FC = () => {
 
   // Image Preview Modal
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  const loadStaff = async () => {
+    try {
+      const realStaff = await userService.getStaff(true);
+      if (realStaff && realStaff.length > 0) {
+        setStaffMembers(realStaff);
+        setSelectedStaffId((prev) => {
+          if (!prev || prev === MOCK_STAFF[0].id) {
+            return realStaff[0].id;
+          }
+          return prev;
+        });
+      }
+    } catch (err) {
+      // Fall back to MOCK_STAFF
+    }
+  };
 
   const loadComplaint = async () => {
     if (!id) return;
@@ -104,6 +123,7 @@ export const AdminComplaintDetailPage: React.FC = () => {
 
   useEffect(() => {
     loadComplaint();
+    loadStaff();
   }, [id]);
 
   // Handler: Status Update Modal Submit
@@ -124,8 +144,9 @@ export const AdminComplaintDetailPage: React.FC = () => {
       setStatusModalOpen(false);
       setStatusComment('');
       success(`Status transitioned to ${selectedStatus.toUpperCase()}`, 'Status Updated');
-    } catch (err) {
-      toastError('Failed to update status', 'Error');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to update status';
+      toastError(msg, 'Error');
       console.error(err);
     } finally {
       setIsUpdatingStatus(false);
@@ -137,7 +158,7 @@ export const AdminComplaintDetailPage: React.FC = () => {
     e.preventDefault();
     if (!complaint) return;
 
-    const staffMember = MOCK_STAFF.find((s) => s.id === selectedStaffId) || MOCK_STAFF[0];
+    const staffMember = staffMembers.find((s) => s.id === selectedStaffId) || staffMembers[0];
     setIsAssigning(true);
     try {
       const updated = await complaintService.assignComplaint(
@@ -153,8 +174,9 @@ export const AdminComplaintDetailPage: React.FC = () => {
         `Assigned to ${staffMember.name} (${selectedDepartment})`,
         'Staff Assigned'
       );
-    } catch (err) {
-      toastError('Failed to assign staff', 'Error');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to assign staff';
+      toastError(msg, 'Error');
       console.error(err);
     } finally {
       setIsAssigning(false);
@@ -204,8 +226,9 @@ export const AdminComplaintDetailPage: React.FC = () => {
           : 'Public update sent to student',
         'Note Appended'
       );
-    } catch (err) {
-      toastError('Failed to add note', 'Error');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to add note';
+      toastError(msg, 'Error');
       console.error(err);
     } finally {
       setIsAddingComment(false);
@@ -853,9 +876,9 @@ export const AdminComplaintDetailPage: React.FC = () => {
             <Select
               value={selectedStaffId}
               onChange={(e) => setSelectedStaffId(e.target.value)}
-              options={MOCK_STAFF.map((staff) => ({
+              options={staffMembers.map((staff) => ({
                 value: staff.id,
-                label: `${staff.name} — ${staff.designation} (${staff.department})`,
+                label: `${staff.name} — ${staff.designation || 'Staff'} (${staff.department || 'General'})`,
               }))}
             />
           </div>

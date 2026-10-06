@@ -1,0 +1,36 @@
+{
+  "name": "smart-college-complaint-portal-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend API for Smart College Complaint Portal",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "db:check": "tsx src/scripts/testConnection.ts",
+    "test:attachments": "tsx src/scripts/testAttachments.ts",
+    "test:rls": "tsx src/scripts/verifyRlsMigration.ts",
+    "test:auth": "tsx src/scripts/testAuth.ts",
+    "test:complaints": "tsx src/scripts/testComplaints.ts",
+    "test:workflow": "tsx src/scripts/testComplaintWorkflow.ts",
+    "test:notifications": "tsx src/scripts/testNotifications.ts",
+    "test:admin": "tsx src/scripts/testAdminAnalytics.ts",
+    "verify:live": "tsx src/scripts/inspectLiveDatabase.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "multer": "^2.4.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/multer": "^2.3.0",
+    "@types/node": "^22.13.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

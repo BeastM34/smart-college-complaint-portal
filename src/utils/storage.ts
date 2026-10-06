@@ -39,7 +39,45 @@ export function getStorageItem<T>(key: StorageKey | string, fallback: T): T {
 }
 
 /**
- * Safely serialize and save an item to localStorage (with memory fallback)
+ * Custom error class for browser storage quota exceeded failures.
+ * Provides user-friendly explanation while retaining the underlying error for diagnostics.
+ */
+export class StorageQuotaError extends Error {
+  public readonly isQuotaExceeded = true;
+  constructor(
+    message: string = 'Unable to save your complaint because browser storage is full. Please remove some stored demo data or reset Demo Mode and try again.',
+    public readonly originalError?: unknown
+  ) {
+    super(message);
+    this.name = 'StorageQuotaError';
+    Object.setPrototypeOf(this, StorageQuotaError.prototype);
+  }
+}
+
+/**
+ * Checks whether an error is a browser storage quota exceeded error.
+ * Handles DOMException / QuotaExceededError across Chromium, Firefox, WebKit, and node mocks.
+ */
+export function isQuotaExceededError(error: unknown): boolean {
+  if (!error) return false;
+  if (error instanceof StorageQuotaError) return true;
+  if (typeof error === 'object') {
+    const e = error as { name?: string; code?: number; number?: number; message?: string };
+    return (
+      e.name === 'QuotaExceededError' ||
+      e.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+      e.code === 22 ||
+      e.code === 1014 ||
+      e.number === -2147024882 ||
+      (typeof e.message === 'string' && /quota.*exceeded|storage.*full/i.test(e.message))
+    );
+  }
+  return false;
+}
+
+/**
+ * Safely serialize and save an item to localStorage (with memory fallback).
+ * Throws StorageQuotaError when browser quota is exceeded so callers never produce false-success state.
  */
 export function setStorageItem<T>(key: StorageKey | string, value: T): boolean {
   try {
@@ -51,6 +89,13 @@ export function setStorageItem<T>(key: StorageKey | string, value: T): boolean {
     }
     return true;
   } catch (error) {
+    if (isQuotaExceededError(error)) {
+      console.error(`[storage] Storage quota exceeded while writing key "${key}":`, error);
+      throw new StorageQuotaError(
+        'Unable to save your complaint because browser storage is full. Please remove some stored demo data or reset Demo Mode and try again.',
+        error
+      );
+    }
     console.error(`[storage] Failed to write key "${key}" to localStorage:`, error);
     return false;
   }

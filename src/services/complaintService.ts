@@ -11,11 +11,18 @@ import type {
   AdminActivityEvent,
   User,
 } from '@/types';
-import { STORAGE_KEYS, getStorageItem, setStorageItem } from '@/utils/storage';
+import {
+  STORAGE_KEYS,
+  getStorageItem,
+  setStorageItem,
+  StorageQuotaError,
+  isQuotaExceededError,
+} from '@/utils/storage';
 import { MOCK_COMPLAINTS, MOCK_USERS } from '@/data/mockData';
 import { authService } from './authService';
 import { notificationService } from './notificationService';
 import { settingsService } from './settingsService';
+import { apiClient } from './apiClient';
 
 export type CanonicalDepartment =
   | 'it'
@@ -301,25 +308,148 @@ export function validateAttachmentPayload(
 }
 
 /**
+ * Maps a backend complaint comment object to frontend ComplaintComment model.
+ */
+export function mapBackendComment(cm: any): ComplaintComment {
+  return {
+    id: cm.id,
+    complaintId: cm.complaint_id || cm.complaintId,
+    authorId: cm.author_id || cm.authorId || cm.user_id || 'unknown',
+    authorName: cm.author_name || cm.authorName || cm.user_name || 'User',
+    authorRole: cm.author_role || cm.authorRole || cm.user_role || 'student',
+    message: cm.message || '',
+    timestamp: cm.created_at || cm.timestamp || new Date().toISOString(),
+    isInternal: cm.is_internal ?? cm.isInternal ?? false,
+  };
+}
+
+/**
+ * Maps a backend complaint timeline event object to frontend TimelineEvent model.
+ */
+export function mapBackendTimelineEvent(t: any): TimelineEvent {
+  return {
+    id: t.id,
+    complaintId: t.complaint_id || t.complaintId,
+    status: t.status || 'pending',
+    message: t.message || '',
+    updatedBy: t.updated_by_name || t.updated_by || t.updatedBy || 'System',
+    role: t.updated_by_role || t.role || 'student',
+    timestamp: t.created_at || t.timestamp || new Date().toISOString(),
+    isInternal: t.is_internal ?? t.isInternal ?? false,
+  };
+}
+
+/**
+ * Maps a backend complaint object to frontend Complaint model.
+ */
+export function mapBackendComplaint(c: any): Complaint {
+  return {
+    id: c.id,
+    ticketNumber: c.ticket_number || c.ticketNumber,
+    title: c.title,
+    description: c.description,
+    category: c.category_slug || c.category || 'other',
+    priority: c.priority,
+    status: c.status,
+    studentId: c.student_id || c.studentId,
+    studentName: c.student_name || c.studentName || 'Student',
+    studentEmail: c.student_email || c.studentEmail,
+    department: c.department || undefined,
+    building: c.building || undefined,
+    floor: c.floor || undefined,
+    roomNumber: c.room_number || c.roomNumber || undefined,
+    location: c.location || undefined,
+    additionalDetails: c.additional_details || c.additionalDetails || undefined,
+    attachments: c.attachments || [],
+    assignedTo: c.assigned_to || c.assignedTo || undefined,
+    assignedStaffName: c.assigned_staff_name || c.assignedStaffName || undefined,
+    assignedDepartment: c.assigned_department || c.assignedDepartment || undefined,
+    estimatedResolutionDate: c.estimated_resolution_date || c.estimatedResolutionDate || undefined,
+    resolvedAt: c.resolved_at || c.resolvedAt || undefined,
+    satisfaction: c.satisfaction_rating
+      ? {
+          rating: c.satisfaction_rating,
+          feedback: c.satisfaction_feedback || undefined,
+          submittedAt: c.satisfaction_submitted_at || '',
+        }
+      : c.satisfaction,
+    comments: Array.isArray(c.comments)
+      ? c.comments.map(mapBackendComment)
+      : c.comments,
+    timeline: Array.isArray(c.timeline)
+      ? c.timeline.map(mapBackendTimelineEvent)
+      : c.timeline || [],
+    reopenReason: c.reopen_reason || c.reopenReason || undefined,
+    reopenedAt: c.reopened_at || c.reopenedAt || undefined,
+    createdAt: c.created_at || c.createdAt,
+    updatedAt: c.updated_at || c.updatedAt,
+  };
+}
+
+/**
  * Complaint Service
  * Manages fetching, filtering, creating, and updating complaint data.
  */
 class ComplaintService {
-  private ensureInitialized(): void {
+  /**
+   * Enforces strict uniqueness of complaint records by stable complaint ID.
+   * Preserves original insertion ordering while eliminating duplicate records.
+   */
+  public deduplicateComplaints(list: Complaint[]): Complaint[] {
+    if (!Array.isArray(list)) return [];
+    const seen = new Set<string>();
+    const result: Complaint[] = [];
+    for (const c of list) {
+      if (!c || typeof c !== 'object') continue;
+      const idKey = (c.id || '').trim().toLowerCase();
+      if (!idKey || seen.has(idKey)) continue;
+      seen.add(idKey);
+      result.push(c);
+    }
+    return result;
+  }
+
+  public ensureInitialized(): void {
     const existing = getStorageItem<Complaint[] | null>(STORAGE_KEYS.COMPLAINTS, null);
-    if (!existing || existing.length === 0) {
-      setStorageItem(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    if (!existing || !Array.isArray(existing) || existing.length === 0) {
+      setStorageItem(STORAGE_KEYS.COMPLAINTS, this.deduplicateComplaints(MOCK_COMPLAINTS));
+      return;
+    }
+    const deduplicated = this.deduplicateComplaints(existing);
+    if (deduplicated.length !== existing.length) {
+      setStorageItem(STORAGE_KEYS.COMPLAINTS, deduplicated);
     }
   }
 
   public async getComplaints(filter?: FilterOptions): Promise<Complaint[]> {
+    // Attempt real backend API first
+    try {
+      const params = new URLSearchParams();
+      if (filter?.status && filter.status !== 'all') params.set('status', filter.status);
+      if (filter?.priority && filter.priority !== 'all') params.set('priority', filter.priority);
+      if (filter?.category && filter.category !== 'all') params.set('category', filter.category);
+      const queryStr = params.toString() ? `?${params.toString()}` : '';
+
+      const res = await apiClient.get<any[]>(`/complaints${queryStr}`);
+      if (res && res.success && Array.isArray(res.data)) {
+        return res.data.map(mapBackendComplaint);
+      }
+    } catch (err: any) {
+      if (err?.status === 401 || err?.status === 403) {
+        if (!authService.isAuthenticated()) throw err;
+      }
+      // Offline fallback for unit tests
+    }
+
     this.ensureInitialized();
     const currentUser = authService.getCurrentUser();
     if (!currentUser || currentUser.role !== 'admin') {
       throw new Error('Unauthorized: Only administrators are permitted to retrieve all complaints.');
     }
 
-    let complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    let complaints = this.deduplicateComplaints(
+      getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS)
+    );
 
     if (!filter) return complaints;
 
@@ -350,13 +480,54 @@ class ComplaintService {
     id: string,
     filterInternal: boolean = true
   ): Promise<Complaint | null> {
+    try {
+      let res;
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+        res = await apiClient.get(`/complaints/${encodeURIComponent(id)}`);
+      } else {
+        res = await apiClient.get(`/complaints/ticket/${encodeURIComponent(id)}`);
+      }
+      if (res && res.success && res.data) {
+        const mapped = mapBackendComplaint(res.data);
+        try {
+          const [commentsRes, timelineRes] = await Promise.allSettled([
+            apiClient.get<any[]>(`/complaints/${encodeURIComponent(mapped.id)}/comments`),
+            apiClient.get<any[]>(`/complaints/${encodeURIComponent(mapped.id)}/timeline`),
+          ]);
+          if (commentsRes.status === 'fulfilled' && commentsRes.value?.success && Array.isArray(commentsRes.value.data)) {
+            mapped.comments = commentsRes.value.data.map(mapBackendComment);
+          }
+          if (timelineRes.status === 'fulfilled' && timelineRes.value?.success && Array.isArray(timelineRes.value.data)) {
+            mapped.timeline = timelineRes.value.data.map(mapBackendTimelineEvent);
+          }
+        } catch {
+          // non-blocking secondary hydration
+        }
+        if (filterInternal) {
+          mapped.comments = mapped.comments?.filter((c) => !c.isInternal);
+          mapped.timeline = mapped.timeline?.filter((t) => !t.isInternal);
+        }
+        return mapped;
+      }
+    } catch (err: any) {
+      if (err?.status === 404) {
+        return null;
+      }
+      if (err?.status === 401 || err?.status === 403) {
+        if (!authService.isAuthenticated()) throw err;
+      }
+      // Offline fallback
+    }
+
     this.ensureInitialized();
     const currentUser = authService.getCurrentUser();
     if (!currentUser) {
       throw new Error('Unauthorized: An authenticated session is required to view complaint details.');
     }
 
-    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    const complaints = this.deduplicateComplaints(
+      getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS)
+    );
     const item = complaints.find((c) => c.id === id || c.ticketNumber === id) || null;
     if (!item) return null;
 
@@ -411,6 +582,18 @@ class ComplaintService {
   }
 
   public async getStudentComplaints(studentIdOrEmail: string): Promise<Complaint[]> {
+    try {
+      const res = await apiClient.get<any[]>('/complaints');
+      if (res && res.success && Array.isArray(res.data)) {
+        return res.data.map(mapBackendComplaint);
+      }
+    } catch (err: any) {
+      if (err?.status === 401 || err?.status === 403) {
+        if (!authService.isAuthenticated()) throw err;
+      }
+      // Offline fallback
+    }
+
     this.ensureInitialized();
     const currentUser = authService.getCurrentUser();
     if (!currentUser) {
@@ -427,7 +610,9 @@ class ComplaintService {
         throw new Error('Unauthorized: You can only retrieve complaints for your own account.');
       }
 
-      const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+      const complaints = this.deduplicateComplaints(
+        getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS)
+      );
       return complaints
         .filter(
           (c) =>
@@ -442,7 +627,9 @@ class ComplaintService {
     }
 
     if (currentUser.role === 'admin') {
-      const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+      const complaints = this.deduplicateComplaints(
+        getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS)
+      );
       return complaints.filter(
         (c) =>
           c.studentId === studentIdOrEmail ||
@@ -454,6 +641,18 @@ class ComplaintService {
   }
 
   public async getStaffComplaints(staffIdOrEmail: string): Promise<Complaint[]> {
+    try {
+      const res = await apiClient.get<any[]>('/complaints');
+      if (res && res.success && Array.isArray(res.data)) {
+        return res.data.map(mapBackendComplaint);
+      }
+    } catch (err: any) {
+      if (err?.status === 401 || err?.status === 403) {
+        if (!authService.isAuthenticated()) throw err;
+      }
+      // Offline fallback
+    }
+
     this.ensureInitialized();
     const currentUser = authService.getCurrentUser();
     if (!currentUser) {
@@ -469,7 +668,9 @@ class ComplaintService {
         throw new Error('Unauthorized: You can only retrieve complaints assigned to your own account.');
       }
 
-      const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+      const complaints = this.deduplicateComplaints(
+        getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS)
+      );
       return complaints
         .filter((c) => c.assignedTo === currentUser.id)
         .map((c) => ({
@@ -480,7 +681,9 @@ class ComplaintService {
     }
 
     if (currentUser.role === 'admin') {
-      const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+      const complaints = this.deduplicateComplaints(
+        getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS)
+      );
       return complaints.filter(
         (c) =>
           c.assignedTo === staffIdOrEmail ||
@@ -580,8 +783,36 @@ class ComplaintService {
   public async createComplaint(
     data: Omit<Complaint, 'id' | 'ticketNumber' | 'createdAt' | 'updatedAt' | 'timeline'>
   ): Promise<Complaint> {
+    // 1. Attempt real backend API first if authenticated session exists
+    try {
+      const payload: Record<string, any> = {
+        title: (data.title || '').trim(),
+        description: (data.description || '').trim(),
+        category: (data.category || '').trim(),
+      };
+      if (data.priority) payload.priority = data.priority;
+      if (data.department) payload.department = data.department;
+      if (data.building) payload.building = data.building;
+      if (data.floor) payload.floor = data.floor;
+      if (data.roomNumber) payload.roomNumber = data.roomNumber;
+      if (data.location) payload.location = data.location;
+      if (data.additionalDetails) payload.additionalDetails = data.additionalDetails;
+
+      const res = await apiClient.post('/complaints', payload);
+      if (res && res.success && res.data) {
+        return mapBackendComplaint(res.data);
+      }
+    } catch (err: any) {
+      if (err?.status === 400 || err?.status === 401 || err?.status === 403) {
+        throw new Error(err.message || 'Failed to submit complaint.');
+      }
+      // Offline fallback for unit tests running without backend server
+    }
+
     this.ensureInitialized();
-    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    const complaints = this.deduplicateComplaints(
+      getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS)
+    );
     const currentUser = authService.getCurrentUser();
     const settings = settingsService.getSettingsSync();
 
@@ -616,8 +847,14 @@ class ComplaintService {
 
     // Determine next sequential ID (CMP-1001, CMP-1002, CMP-1003...)
     let maxSeq = 1000;
+    const existingIds = new Set<string>();
+    const existingTickets = new Set<string>();
+
     complaints.forEach((c) => {
-      const match = c.ticketNumber.match(/CMP-(?:2026-)?0*(\d+)/i) || c.id.match(/cmp-(\d+)/i);
+      if (c.id) existingIds.add(c.id.toLowerCase());
+      if (c.ticketNumber) existingTickets.add(c.ticketNumber.toLowerCase());
+
+      const match = c.ticketNumber?.match(/CMP-(?:2026-)?0*(\d+)/i) || c.id?.match(/cmp-(\d+)/i);
       if (match) {
         const num = parseInt(match[1], 10);
         if (!isNaN(num) && num > maxSeq) {
@@ -626,7 +863,15 @@ class ComplaintService {
       }
     });
 
-    const nextSeq = maxSeq + 1;
+    let nextSeq = maxSeq + 1;
+    // Guaranteed non-collision loop: ensures next sequence never collides with any existing ID or ticket
+    while (
+      existingIds.has(`cmp-${nextSeq}`.toLowerCase()) ||
+      existingTickets.has(`cmp-${nextSeq}`.toLowerCase())
+    ) {
+      nextSeq++;
+    }
+
     const ticketNumber = `CMP-${nextSeq}`;
     const id = `cmp-${nextSeq}`;
 
@@ -686,10 +931,29 @@ class ComplaintService {
       timeline: [initialTimeline],
     };
 
-    const updatedList = [newComplaint, ...complaints];
-    setStorageItem(STORAGE_KEYS.COMPLAINTS, updatedList);
+    const updatedList = this.deduplicateComplaints([newComplaint, ...complaints]);
 
-    // Create admin notification
+    // Attempt persistence. If storage write fails, abort immediately without reporting false-success.
+    let writeSuccess = false;
+    try {
+      writeSuccess = setStorageItem(STORAGE_KEYS.COMPLAINTS, updatedList);
+    } catch (err: unknown) {
+      if (isQuotaExceededError(err)) {
+        throw new StorageQuotaError(
+          'Unable to save your complaint because browser storage is full. Please remove some stored demo data or reset Demo Mode and try again.',
+          err
+        );
+      }
+      throw err;
+    }
+
+    if (!writeSuccess) {
+      throw new StorageQuotaError(
+        'Unable to save your complaint because browser storage is full. Please remove some stored demo data or reset Demo Mode and try again.'
+      );
+    }
+
+    // Create admin notification only after primary complaint persistence is verified
     try {
       await notificationService.createNotification({
         userId: 'user-admin-1',
@@ -699,7 +963,7 @@ class ComplaintService {
         link: `/admin/complaints/${id}`,
       });
     } catch (e) {
-      console.warn('Could not dispatch admin notification:', e);
+      console.warn('Could not dispatch admin notification (complaint safely created):', e);
     }
 
     return newComplaint;
@@ -712,8 +976,39 @@ class ComplaintService {
     isInternal: boolean = false,
     notifyStudent: boolean = true
   ): Promise<Complaint> {
+    try {
+      let complaintUuid = id;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+        const resolved = await this.getComplaintById(id);
+        if (resolved?.id) {
+          complaintUuid = resolved.id;
+        }
+      }
+
+      const payload: Record<string, any> = {
+        status,
+        notes: message,
+      };
+      if (status === 'resolved') {
+        payload.resolution_notes = message;
+      }
+
+      const res = await apiClient.patch<any>(`/complaints/${encodeURIComponent(complaintUuid)}/status`, payload);
+      if (res && res.success && res.data) {
+        const fresh = await this.getComplaintById(complaintUuid, !isInternal);
+        return fresh || mapBackendComplaint(res.data);
+      }
+    } catch (err: any) {
+      if (err?.status === 400 || err?.status === 401 || err?.status === 403 || err?.status === 404) {
+        throw new Error(err.message || 'Failed to update complaint status.');
+      }
+      // Offline fallback
+    }
+
     this.ensureInitialized();
-    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    const complaints = this.deduplicateComplaints(
+      getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS)
+    );
     const currentUser = authService.getCurrentUser();
     const index = complaints.findIndex((c) => c.id === id || c.ticketNumber === id);
 
@@ -772,7 +1067,10 @@ class ComplaintService {
     };
 
     complaints[index] = updated;
-    setStorageItem(STORAGE_KEYS.COMPLAINTS, complaints);
+    const writeOk = setStorageItem(STORAGE_KEYS.COMPLAINTS, this.deduplicateComplaints(complaints));
+    if (!writeOk) {
+      throw new StorageQuotaError('Unable to update complaint because browser storage is full.');
+    }
 
     // Automatic Notification: notify student only if not internal and notifyStudent is true
     if (!isInternal && notifyStudent) {
@@ -807,20 +1105,81 @@ class ComplaintService {
     return this.updateComplaintStatus(id, status, message, isInternal, notifyStudent);
   }
 
+  public async resolveComplaint(
+    id: string,
+    notes?: string,
+    resolutionNotes?: string
+  ): Promise<Complaint> {
+    try {
+      let complaintUuid = id;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+        const resolved = await this.getComplaintById(id);
+        if (resolved?.id) {
+          complaintUuid = resolved.id;
+        }
+      }
+
+      const payload: Record<string, any> = {
+        notes,
+        resolution_notes: resolutionNotes || notes,
+      };
+
+      const res = await apiClient.patch<any>(`/complaints/${encodeURIComponent(complaintUuid)}/resolution`, payload);
+      if (res && res.success && res.data) {
+        const fresh = await this.getComplaintById(complaintUuid);
+        return fresh || mapBackendComplaint(res.data);
+      }
+    } catch (err: any) {
+      if (err?.status === 400 || err?.status === 401 || err?.status === 403 || err?.status === 404) {
+        throw new Error(err.message || 'Failed to resolve complaint.');
+      }
+    }
+
+    return this.updateComplaintStatus(id, 'resolved', resolutionNotes || notes || 'Complaint resolved');
+  }
+
   public async assignComplaint(
     id: string,
     staffId: string,
-    staffName: string,
+    staffName?: string,
     department?: string,
     notifyStudent: boolean = true
   ): Promise<Complaint> {
+    try {
+      let complaintUuid = id;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+        const resolved = await this.getComplaintById(id);
+        if (resolved?.id) {
+          complaintUuid = resolved.id;
+        }
+      }
+
+      const payload: Record<string, any> = {
+        assigned_to: staffId,
+      };
+      if (department) payload.assigned_department = department;
+
+      const res = await apiClient.patch<any>(`/complaints/${encodeURIComponent(complaintUuid)}/assignment`, payload);
+      if (res && res.success && res.data) {
+        const fresh = await this.getComplaintById(complaintUuid, false);
+        return fresh || mapBackendComplaint(res.data);
+      }
+    } catch (err: any) {
+      if (err?.status === 400 || err?.status === 401 || err?.status === 403 || err?.status === 404) {
+        throw new Error(err.message || 'Failed to assign complaint.');
+      }
+      // Offline fallback
+    }
+
     this.ensureInitialized();
     const currentUser = authService.getCurrentUser();
     if (!currentUser || currentUser.role !== 'admin') {
       throw new Error('Unauthorized: Only administrators are permitted to assign complaints.');
     }
 
-    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    const complaints = this.deduplicateComplaints(
+      getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS)
+    );
     const index = complaints.findIndex((c) => c.id === id || c.ticketNumber === id);
 
     if (index === -1) {
@@ -859,7 +1218,10 @@ class ComplaintService {
     };
 
     complaints[index] = updated;
-    setStorageItem(STORAGE_KEYS.COMPLAINTS, complaints);
+    const writeOk = setStorageItem(STORAGE_KEYS.COMPLAINTS, this.deduplicateComplaints(complaints));
+    if (!writeOk) {
+      throw new StorageQuotaError('Unable to assign complaint because browser storage is full.');
+    }
 
     // Automatic Notification: notify student that technician has been assigned
     if (notifyStudent) {
@@ -892,7 +1254,9 @@ class ComplaintService {
       throw new Error('Unauthorized: Only administrators are permitted to update complaint priorities.');
     }
 
-    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    const complaints = this.deduplicateComplaints(
+      getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS)
+    );
     const index = complaints.findIndex((c) => c.id === id || c.ticketNumber === id);
 
     if (index === -1) {
@@ -921,7 +1285,10 @@ class ComplaintService {
     };
 
     complaints[index] = updated;
-    setStorageItem(STORAGE_KEYS.COMPLAINTS, complaints);
+    const writeOk = setStorageItem(STORAGE_KEYS.COMPLAINTS, this.deduplicateComplaints(complaints));
+    if (!writeOk) {
+      throw new StorageQuotaError('Unable to update complaint priority because browser storage is full.');
+    }
 
     if (notifyStudent) {
       try {
@@ -954,7 +1321,9 @@ class ComplaintService {
       throw new Error('Unauthorized: Only administrators are permitted to perform bulk status updates.');
     }
 
-    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    const complaints = this.deduplicateComplaints(
+      getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS)
+    );
     const timestamp = new Date().toISOString();
     const idSet = new Set(ids);
 
@@ -1007,18 +1376,79 @@ class ComplaintService {
       return updatedItem;
     });
 
-    setStorageItem(STORAGE_KEYS.COMPLAINTS, updatedList);
+    const writeOk = setStorageItem(STORAGE_KEYS.COMPLAINTS, this.deduplicateComplaints(updatedList));
+    if (!writeOk) {
+      throw new StorageQuotaError('Unable to perform bulk update because browser storage is full.');
+    }
     return updatedComplaints;
   }
 
   public async getAdminStats(): Promise<AdminKPIStats> {
-    this.ensureInitialized();
     const currentUser = authService.getCurrentUser();
+    if (currentUser && currentUser.role !== 'admin') {
+      throw new Error('Unauthorized: Only administrators are permitted to retrieve admin statistics.');
+    }
+
+    try {
+      const res = await apiClient.get<any>('/analytics?range=7d');
+      if (res && res.success && res.data) {
+        const full = res.data;
+        const statusBreakdown: Record<ComplaintStatus, number> = {
+          pending: full.pendingComplaints || 0,
+          assigned: full.assignedComplaints || 0,
+          in_progress: full.inProgressComplaints || 0,
+          resolved: full.resolvedComplaints || 0,
+          rejected: full.rejectedComplaints || 0,
+        };
+        const categoryBreakdown: Record<string, number> = {};
+        (full.categoryDistribution || []).forEach((c: any) => {
+          categoryBreakdown[c.category] = c.count;
+        });
+        const priorityBreakdown: Record<Priority, number> = {
+          low: 0,
+          medium: 0,
+          high: 0,
+          critical: 0,
+        };
+        (full.priorityDistribution || []).forEach((p: any) => {
+          if (p.priority in priorityBreakdown) {
+            priorityBreakdown[p.priority as Priority] = p.count;
+          }
+        });
+        const dailyTrends = (full.trendData || []).map((t: any) => ({
+          date: t.startDate,
+          label: t.label,
+          count: t.submitted,
+        }));
+
+        return {
+          total: full.totalComplaints || 0,
+          newComplaints: (full.pendingComplaints || 0) + (full.assignedComplaints || 0),
+          pending: full.pendingComplaints || 0,
+          inProgress: full.inProgressComplaints || 0,
+          resolved: full.resolvedComplaints || 0,
+          critical: priorityBreakdown.critical,
+          statusBreakdown,
+          categoryBreakdown,
+          priorityBreakdown,
+          dailyTrends,
+        };
+      }
+    } catch (err: any) {
+      if (err?.status === 401 || err?.status === 403) {
+        throw new Error(err.message || 'Unauthorized: Only administrators are permitted to retrieve admin statistics.');
+      }
+      // Offline fallback
+    }
+
+    this.ensureInitialized();
     if (!currentUser || currentUser.role !== 'admin') {
       throw new Error('Unauthorized: Only administrators are permitted to retrieve admin statistics.');
     }
 
-    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    const complaints = this.deduplicateComplaints(
+      getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS)
+    );
 
     const now = Date.now();
     const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
@@ -1109,7 +1539,9 @@ class ComplaintService {
       throw new Error('Unauthorized: Only administrators are permitted to retrieve all recent activity.');
     }
 
-    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    const complaints = this.deduplicateComplaints(
+      getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS)
+    );
     const events: AdminActivityEvent[] = [];
 
     complaints.forEach((complaint) => {
@@ -1133,8 +1565,36 @@ class ComplaintService {
     message: string,
     isInternal: boolean = false
   ): Promise<Complaint> {
+    try {
+      let complaintUuid = complaintId;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(complaintId)) {
+        const resolved = await this.getComplaintById(complaintId);
+        if (resolved?.id) {
+          complaintUuid = resolved.id;
+        }
+      }
+
+      const payload = {
+        message: message.trim(),
+        is_internal: Boolean(isInternal),
+      };
+
+      const res = await apiClient.post<any>(`/complaints/${encodeURIComponent(complaintUuid)}/comments`, payload);
+      if (res && res.success) {
+        const fresh = await this.getComplaintById(complaintUuid, !isInternal);
+        if (fresh) return fresh;
+      }
+    } catch (err: any) {
+      if (err?.status === 400 || err?.status === 401 || err?.status === 403 || err?.status === 404) {
+        throw new Error(err.message || 'Failed to add comment.');
+      }
+      // Offline fallback
+    }
+
     this.ensureInitialized();
-    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    const complaints = this.deduplicateComplaints(
+      getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS)
+    );
     const currentUser = authService.getCurrentUser();
     const index = complaints.findIndex(
       (c) => c.id === complaintId || c.ticketNumber === complaintId
@@ -1197,7 +1657,10 @@ class ComplaintService {
     };
 
     complaints[index] = updated;
-    setStorageItem(STORAGE_KEYS.COMPLAINTS, complaints);
+    const writeOk = setStorageItem(STORAGE_KEYS.COMPLAINTS, this.deduplicateComplaints(complaints));
+    if (!writeOk) {
+      throw new StorageQuotaError('Unable to add comment because browser storage is full.');
+    }
 
     // If student commented, notify admin
     if (currentUser?.role === 'student') {
@@ -1236,6 +1699,31 @@ class ComplaintService {
     complaintId: string,
     reason: string
   ): Promise<Complaint> {
+    try {
+      let complaintUuid = complaintId;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(complaintId)) {
+        const resolved = await this.getComplaintById(complaintId);
+        if (resolved?.id) {
+          complaintUuid = resolved.id;
+        }
+      }
+
+      const payload = {
+        reason: reason.trim(),
+      };
+
+      const res = await apiClient.post<any>(`/complaints/${encodeURIComponent(complaintUuid)}/reopen`, payload);
+      if (res && res.success && res.data) {
+        const fresh = await this.getComplaintById(complaintUuid);
+        return fresh || mapBackendComplaint(res.data);
+      }
+    } catch (err: any) {
+      if (err?.status === 400 || err?.status === 401 || err?.status === 403 || err?.status === 404) {
+        throw new Error(err.message || 'Failed to reopen complaint.');
+      }
+      // Offline fallback
+    }
+
     this.ensureInitialized();
     const settings = settingsService.getSettingsSync();
     if (!settings.allowReopening) {
@@ -1251,7 +1739,9 @@ class ComplaintService {
       throw new Error('Unauthorized: Staff members cannot reopen complaints.');
     }
 
-    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    const complaints = this.deduplicateComplaints(
+      getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS)
+    );
     const index = complaints.findIndex(
       (c) => c.id === complaintId || c.ticketNumber === complaintId
     );
@@ -1298,7 +1788,10 @@ class ComplaintService {
     };
 
     complaints[index] = updated;
-    setStorageItem(STORAGE_KEYS.COMPLAINTS, complaints);
+    const writeOk = setStorageItem(STORAGE_KEYS.COMPLAINTS, this.deduplicateComplaints(complaints));
+    if (!writeOk) {
+      throw new StorageQuotaError('Unable to reopen complaint because browser storage is full.');
+    }
 
     // Notify admin
     try {
@@ -1327,7 +1820,9 @@ class ComplaintService {
       throw new Error('Unauthorized: An authenticated session is required to rate satisfaction.');
     }
 
-    const complaints = getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS);
+    const complaints = this.deduplicateComplaints(
+      getStorageItem<Complaint[]>(STORAGE_KEYS.COMPLAINTS, MOCK_COMPLAINTS)
+    );
     const index = complaints.findIndex(
       (c) => c.id === complaintId || c.ticketNumber === complaintId
     );
@@ -1380,8 +1875,101 @@ class ComplaintService {
     };
 
     complaints[index] = updated;
-    setStorageItem(STORAGE_KEYS.COMPLAINTS, complaints);
+    const writeOk = setStorageItem(STORAGE_KEYS.COMPLAINTS, this.deduplicateComplaints(complaints));
+    if (!writeOk) {
+      throw new StorageQuotaError('Unable to rate complaint because browser storage is full.');
+    }
     return updated;
+  }
+
+  public async postComment(
+    complaintId: string,
+    message: string,
+    isInternal: boolean = false
+  ): Promise<ComplaintComment> {
+    try {
+      let complaintUuid = complaintId;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(complaintId)) {
+        const resolved = await this.getComplaintById(complaintId);
+        if (resolved?.id) {
+          complaintUuid = resolved.id;
+        }
+      }
+
+      const payload = {
+        message: message.trim(),
+        is_internal: Boolean(isInternal),
+      };
+
+      const res = await apiClient.post<any>(`/complaints/${encodeURIComponent(complaintUuid)}/comments`, payload);
+      if (res && res.success && res.data) {
+        return mapBackendComment(res.data);
+      }
+    } catch (err: any) {
+      if (err?.status === 400 || err?.status === 401 || err?.status === 403 || err?.status === 404) {
+        throw new Error(err.message || 'Failed to post comment.');
+      }
+    }
+
+    const complaint = await this.addComment(complaintId, message, isInternal);
+    return (complaint.comments?.[complaint.comments.length - 1] || {
+      id: `comment-${Date.now()}`,
+      complaintId,
+      authorId: authService.getCurrentUser()?.id || 'anonymous',
+      authorName: authService.getCurrentUser()?.name || 'User',
+      authorRole: authService.getCurrentUser()?.role || 'student',
+      message: message.trim(),
+      timestamp: new Date().toISOString(),
+      isInternal,
+    }) as ComplaintComment;
+  }
+
+  public async getComments(complaintId: string): Promise<ComplaintComment[]> {
+    try {
+      let complaintUuid = complaintId;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(complaintId)) {
+        const resolved = await this.getComplaintById(complaintId);
+        if (resolved?.id) {
+          complaintUuid = resolved.id;
+        }
+      }
+
+      const res = await apiClient.get<any[]>(`/complaints/${encodeURIComponent(complaintUuid)}/comments`);
+      if (res && res.success && Array.isArray(res.data)) {
+        return res.data.map(mapBackendComment);
+      }
+    } catch (err: any) {
+      if (err?.status === 401 || err?.status === 403 || err?.status === 404) {
+        if (!authService.isAuthenticated()) throw err;
+      }
+    }
+
+    const complaint = await this.getComplaintById(complaintId);
+    return complaint?.comments || [];
+  }
+
+  public async getTimeline(complaintId: string): Promise<TimelineEvent[]> {
+    try {
+      let complaintUuid = complaintId;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(complaintId)) {
+        const resolved = await this.getComplaintById(complaintId);
+        if (resolved?.id) {
+          complaintUuid = resolved.id;
+        }
+      }
+
+      const res = await apiClient.get<any[]>(`/complaints/${encodeURIComponent(complaintUuid)}/timeline`);
+      if (res && res.success && Array.isArray(res.data)) {
+        return res.data.map(mapBackendTimelineEvent);
+      }
+    } catch (err: any) {
+      if (err?.status === 401 || err?.status === 403 || err?.status === 404) {
+        if (!authService.isAuthenticated()) throw err;
+      }
+    }
+
+    const complaint = await this.getComplaintById(complaintId);
+    return complaint?.timeline || [];
   }
 }
 

@@ -211,9 +211,9 @@ export const StaffNotificationsPage: React.FC = () => {
                         <Clock className="w-3 h-3" />
                         {formatRelativeTime(n.createdAt)}
                       </span>
-                      {n.link && (
+                      {(n.link || n.complaintId) && (
                         <Link
-                          to={n.link.replace('/student/complaints/', '/staff/complaints/')}
+                          to={n.link ? n.link.replace('/student/complaints/', '/staff/complaints/') : `/staff/complaints/${n.complaintId}`}
                           className="font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 inline-flex items-center gap-1"
                         >
                           <span>View Ticket</span>
