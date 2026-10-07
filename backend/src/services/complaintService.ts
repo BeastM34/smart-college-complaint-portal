@@ -15,6 +15,36 @@ import {
 } from '../types';
 import { NotificationService } from './notificationService';
 
+export const COMPLAINT_SELECT_WITH_PROFILES = `
+  *,
+  student_profile:profiles!complaints_student_id_fkey(
+    id,
+    name,
+    email,
+    student_id,
+    department
+  ),
+  assigned_profile:profiles!complaints_assigned_to_fkey(
+    id,
+    name,
+    email,
+    department
+  )
+`;
+
+export function enrichComplaintWithProfiles(row: any): Complaint {
+  if (!row) return row;
+  const student = row.student_profile;
+  const assigned = row.assigned_profile;
+  return {
+    ...row,
+    student_name: student?.name || row.student_name || null,
+    student_email: student?.email || row.student_email || null,
+    student_college_id: student?.student_id || row.student_college_id || null,
+    assigned_staff_name: assigned?.name || row.assigned_staff_name || null,
+  };
+}
+
 export class ComplaintService {
   /**
    * Generates a unique, sequential, human-readable ticket number.
@@ -171,7 +201,7 @@ export class ComplaintService {
       const { data, error } = await userClient
         .from('complaints')
         .insert(payload)
-        .select('*')
+        .select(COMPLAINT_SELECT_WITH_PROFILES)
         .single();
 
       if (!error && data) {
@@ -194,14 +224,16 @@ export class ComplaintService {
       throw insertErr;
     }
 
+    const enriched = enrichComplaintWithProfiles(created);
+
     // Dispatch notification to admins
     try {
-      await NotificationService.notifyAdminsOfNewComplaint(created as Complaint);
+      await NotificationService.notifyAdminsOfNewComplaint(enriched);
     } catch (err: any) {
       console.warn('[ComplaintService] Warning: Failed to send new complaint notification:', err?.message);
     }
 
-    return created as Complaint;
+    return enriched;
   }
 
   /**
@@ -220,7 +252,7 @@ export class ComplaintService {
 
     let query = userClient
       .from('complaints')
-      .select('*', { count: 'exact' });
+      .select(COMPLAINT_SELECT_WITH_PROFILES, { count: 'exact' });
 
     // Optional status filter
     if (filters.status && typeof filters.status === 'string') {
@@ -266,7 +298,7 @@ export class ComplaintService {
     const totalPages = Math.ceil(total / limit) || 1;
 
     return {
-      complaints: (data || []) as Complaint[],
+      complaints: ((data || []) as any[]).map(enrichComplaintWithProfiles),
       total,
       page,
       limit,
@@ -290,7 +322,7 @@ export class ComplaintService {
 
     const { data, error } = await userClient
       .from('complaints')
-      .select('*')
+      .select(COMPLAINT_SELECT_WITH_PROFILES)
       .eq('id', id)
       .maybeSingle();
 
@@ -298,7 +330,7 @@ export class ComplaintService {
       return null;
     }
 
-    return data as Complaint;
+    return enrichComplaintWithProfiles(data);
   }
 
   /**
@@ -316,7 +348,7 @@ export class ComplaintService {
 
     const { data, error } = await userClient
       .from('complaints')
-      .select('*')
+      .select(COMPLAINT_SELECT_WITH_PROFILES)
       .eq('ticket_number', cleanTicket)
       .maybeSingle();
 
@@ -324,7 +356,7 @@ export class ComplaintService {
       return null;
     }
 
-    return data as Complaint;
+    return enrichComplaintWithProfiles(data);
   }
 
   /**
@@ -407,7 +439,7 @@ export class ComplaintService {
       .from('complaints')
       .update(updatePayload)
       .eq('id', complaintId)
-      .select('*')
+      .select(COMPLAINT_SELECT_WITH_PROFILES)
       .single();
 
     if (updateErr || !updatedComplaint) {
@@ -415,6 +447,8 @@ export class ComplaintService {
       err.statusCode = updateErr?.code === '42501' ? 403 : 500;
       throw err;
     }
+
+    const enriched = enrichComplaintWithProfiles(updatedComplaint);
 
     // Create timeline entry
     const isReassignment = Boolean(complaint.assigned_to && complaint.assigned_to !== targetStaffId);
@@ -438,12 +472,12 @@ export class ComplaintService {
 
     // Dispatch notification to newly assigned staff member
     try {
-      await NotificationService.notifyAssignee(updatedComplaint as Complaint, targetStaffId, isReassignment);
+      await NotificationService.notifyAssignee(enriched, targetStaffId, isReassignment);
     } catch (err: any) {
       console.warn('[ComplaintService] Warning: Failed to send assignment notification:', err?.message);
     }
 
-    return updatedComplaint as Complaint;
+    return enriched;
   }
 
   /**
@@ -517,7 +551,7 @@ export class ComplaintService {
       .from('complaints')
       .update(updatePayload)
       .eq('id', complaintId)
-      .select('*')
+      .select(COMPLAINT_SELECT_WITH_PROFILES)
       .single();
 
     if (updateErr || !updatedComplaint) {
@@ -525,6 +559,8 @@ export class ComplaintService {
       err.statusCode = updateErr?.code === '42501' ? 403 : 500;
       throw err;
     }
+
+    const enriched = enrichComplaintWithProfiles(updatedComplaint);
 
     // Create timeline entry
     let action = 'status_updated';
@@ -557,15 +593,15 @@ export class ComplaintService {
     // Dispatch notification to complaint owner
     try {
       if (targetStatus === 'resolved') {
-        await NotificationService.notifyStudentOfResolution(updatedComplaint as Complaint);
+        await NotificationService.notifyStudentOfResolution(enriched);
       } else {
-        await NotificationService.notifyStudentOfStatusChange(updatedComplaint as Complaint, targetStatus);
+        await NotificationService.notifyStudentOfStatusChange(enriched, targetStatus);
       }
     } catch (err: any) {
       console.warn('[ComplaintService] Warning: Failed to send status change notification:', err?.message);
     }
 
-    return updatedComplaint as Complaint;
+    return enriched;
   }
 
   /**
@@ -626,7 +662,7 @@ export class ComplaintService {
       .from('complaints')
       .update(updatePayload)
       .eq('id', complaintId)
-      .select('*')
+      .select(COMPLAINT_SELECT_WITH_PROFILES)
       .single();
 
     if (updateErr || !updatedComplaint) {
@@ -634,6 +670,8 @@ export class ComplaintService {
       err.statusCode = updateErr?.code === '42501' ? 403 : 500;
       throw err;
     }
+
+    const enriched = enrichComplaintWithProfiles(updatedComplaint);
 
     try {
       await userClient.from('complaint_timeline').insert({
@@ -650,12 +688,12 @@ export class ComplaintService {
 
     // Dispatch notification to assigned staff and admins
     try {
-      await NotificationService.notifyOfReopen(updatedComplaint as Complaint, reason);
+      await NotificationService.notifyOfReopen(enriched, reason);
     } catch (err: any) {
       console.warn('[ComplaintService] Warning: Failed to send reopen notification:', err?.message);
     }
 
-    return updatedComplaint as Complaint;
+    return enriched;
   }
 
   /**

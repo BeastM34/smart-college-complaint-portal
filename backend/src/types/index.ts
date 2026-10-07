@@ -111,6 +111,23 @@ export interface Complaint {
   reopened_at?: string | null;
   created_at: string;
   updated_at: string;
+  student_name?: string | null;
+  student_email?: string | null;
+  student_college_id?: string | null;
+  student_profile?: {
+    id?: string;
+    name?: string | null;
+    email?: string | null;
+    student_id?: string | null;
+    department?: string | null;
+  } | null;
+  assigned_staff_name?: string | null;
+  assigned_profile?: {
+    id?: string;
+    name?: string | null;
+    email?: string | null;
+    department?: string | null;
+  } | null;
 }
 
 export interface CreateComplaintInput {

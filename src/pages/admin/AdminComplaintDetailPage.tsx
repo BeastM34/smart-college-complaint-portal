@@ -612,14 +612,14 @@ export const AdminComplaintDetailPage: React.FC = () => {
             <CardContent className="p-4 space-y-3 text-xs">
               <div className="flex items-center gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
                 <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 font-bold flex items-center justify-center text-sm">
-                  {complaint.studentName.charAt(0)}
+                  {(complaint.studentName || 'S').charAt(0)}
                 </div>
                 <div>
                   <p className="font-bold text-sm text-slate-900 dark:text-slate-100">
                     {complaint.studentName}
                   </p>
                   <p className="text-[11px] text-slate-400">
-                    ID: {complaint.studentId}
+                    ID: {complaint.studentCollegeId || complaint.studentId}
                   </p>
                 </div>
               </div>
@@ -628,7 +628,7 @@ export const AdminComplaintDetailPage: React.FC = () => {
                 <div>
                   <span className="text-slate-400 block text-[10px] uppercase font-semibold">Email</span>
                   <p className="font-medium text-slate-800 dark:text-slate-200">
-                    {complaint.studentEmail || `${complaint.studentId.toLowerCase()}@college.edu`}
+                    {complaint.studentEmail || 'Email unavailable'}
                   </p>
                 </div>
                 <div>

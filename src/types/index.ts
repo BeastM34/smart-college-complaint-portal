@@ -119,6 +119,7 @@ export interface Complaint {
   priority: Priority;
   status: ComplaintStatus;
   studentId: string;
+  studentCollegeId?: string;
   studentName: string;
   studentEmail?: string;
   department?: string;

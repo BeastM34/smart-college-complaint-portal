@@ -81,7 +81,11 @@ export const StudentComplaintsPage: React.FC = () => {
   // Filter complaints strictly belonging to the logged-in student
   const studentComplaints = useMemo(() => {
     return complaints.filter(
-      (c) => !user || c.studentId === user.id || c.studentEmail === user.email
+      (c) =>
+        !user ||
+        c.studentId === user.id ||
+        (user.studentId && c.studentId === user.studentId) ||
+        (c.studentEmail && user.email && c.studentEmail.toLowerCase() === user.email.toLowerCase())
     );
   }, [complaints, user]);
 
