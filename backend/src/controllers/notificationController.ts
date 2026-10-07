@@ -191,4 +191,109 @@ export class NotificationController {
       });
     }
   }
+
+  /**
+   * POST /api/notifications/broadcast
+   * Dispatches a campus announcement broadcast (Admin only).
+   */
+  public static async createBroadcast(req: Request, res: Response): Promise<void> {
+    if (!req.user || !req.user.id) {
+      res.status(401).json({
+        success: false,
+        message: 'Authentication required. Missing user identity.',
+      });
+      return;
+    }
+
+    if (req.profile?.role !== 'admin') {
+      res.status(403).json({
+        success: false,
+        message: 'Forbidden: Only administrators can dispatch broadcast notifications.',
+      });
+      return;
+    }
+
+    const {
+      title,
+      message,
+      audience,
+      targetDepartment,
+      target_department,
+      targetStudentId,
+      target_student_id,
+      priority,
+    } = req.body || {};
+
+    try {
+      const result = await NotificationService.broadcastNotification(
+        { id: req.user.id, role: req.profile.role },
+        {
+          title,
+          message,
+          audience,
+          targetDepartment: targetDepartment || target_department,
+          targetStudentId: targetStudentId || target_student_id,
+          priority,
+        }
+      );
+
+      res.status(201).json({
+        success: true,
+        message: 'Broadcast notification dispatched successfully.',
+        data: result.broadcast,
+        recipientCount: result.recipientCount,
+      });
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500;
+      res.status(statusCode).json({
+        success: false,
+        message: err.message || 'Failed to dispatch broadcast notification.',
+      });
+    }
+  }
+
+  /**
+   * GET /api/notifications/broadcasts
+   * Lists administrative broadcast history (Admin only).
+   */
+  public static async listBroadcasts(req: Request, res: Response): Promise<void> {
+    if (!req.user || !req.user.id) {
+      res.status(401).json({
+        success: false,
+        message: 'Authentication required. Missing user identity.',
+      });
+      return;
+    }
+
+    if (req.profile?.role !== 'admin') {
+      res.status(403).json({
+        success: false,
+        message: 'Forbidden: Only administrators can view broadcast history.',
+      });
+      return;
+    }
+
+    if (!req.supabase) {
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error: User database session is not available.',
+      });
+      return;
+    }
+
+    try {
+      const broadcasts = await NotificationService.listBroadcasts(req.supabase);
+
+      res.status(200).json({
+        success: true,
+        data: broadcasts,
+      });
+    } catch (err: any) {
+      const statusCode = err.statusCode || 500;
+      res.status(statusCode).json({
+        success: false,
+        message: err.message || 'Failed to retrieve broadcast history.',
+      });
+    }
+  }
 }

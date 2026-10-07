@@ -6,13 +6,42 @@ import { Modal } from './Modal';
 import { Button } from './Button';
 import { settingsService } from '@/services/settingsService';
 import { useToast } from '@/hooks/useToast';
+import { apiClient } from '@/services/apiClient';
 import type { Role } from '@/types';
+
+/**
+ * Determines whether the portal is genuinely operating in local demo/mock mode.
+ * Returns false in production environments and whenever an authenticated backend session exists.
+ */
+export const isDemoModeActive = (): boolean => {
+  // If explicitly forced via environment variable
+  const envDemo = typeof import.meta !== 'undefined' && import.meta.env?.VITE_DEMO_MODE;
+  if (envDemo === 'true') return true;
+  if (envDemo === 'false') return false;
+
+  // In production builds, never display mock data banner unless explicitly configured
+  if (typeof import.meta !== 'undefined' && import.meta.env?.PROD) {
+    return false;
+  }
+
+  // If an authenticated backend token exists, we are connected to the live backend
+  const token = apiClient.getAccessToken();
+  if (token) return false;
+
+  // In local development without backend session, allow demo mode
+  return true;
+};
 
 export const DemoModeIndicator: React.FC = () => {
   const { user, switchRole } = useAuth();
   const { success, error: toastError } = useToast();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+
+  const isDemo = isDemoModeActive();
+  if (!isDemo) {
+    return null;
+  }
 
   const handleSwitch = (role: Role) => {
     switchRole(role);

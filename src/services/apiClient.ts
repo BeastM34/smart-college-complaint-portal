@@ -160,10 +160,14 @@ class ApiClient {
       ...((options.headers as Record<string, string>) || {}),
     };
 
-    // Attach Content-Type: application/json only when a body is present or for mutations where expected
+    // Attach Content-Type: application/json only when a body is present or for mutations where expected,
+    // but NEVER override Content-Type when sending FormData (browser automatically sets multipart boundary).
+    const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
     const hasBody = options.body !== undefined && options.body !== null;
     const isBodylessMethod = method === 'GET' || method === 'DELETE' || method === 'HEAD';
-    if (hasBody || (!isBodylessMethod && !headers['Content-Type'])) {
+    if (isFormData) {
+      delete headers['Content-Type'];
+    } else if (hasBody || (!isBodylessMethod && !headers['Content-Type'])) {
       if (!headers['Content-Type']) {
         headers['Content-Type'] = 'application/json';
       }
@@ -236,9 +240,10 @@ class ApiClient {
   }
 
   public async post<T = any>(endpoint: string, body?: any, options?: RequestInit): Promise<ApiResponse<T>> {
+    const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
     return this.request<T>(endpoint, {
       method: 'POST',
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: isFormData ? body : (body !== undefined ? JSON.stringify(body) : undefined),
       ...options,
     });
   }

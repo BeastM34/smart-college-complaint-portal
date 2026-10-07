@@ -217,6 +217,7 @@ export const NewComplaintPage: React.FC = () => {
     sizeBytes: number;
     sizeFormatted: string;
     dataUrl: string;
+    file?: File;
   }
 
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
@@ -309,6 +310,7 @@ export const NewComplaintPage: React.FC = () => {
           sizeBytes: file.size,
           sizeFormatted,
           dataUrl: reader.result as string,
+          file,
         });
 
         loaded++;
@@ -436,7 +438,19 @@ export const NewComplaintPage: React.FC = () => {
     setIsSubmitting(true);
     setSubmissionError(null);
     try {
-      const attachmentsList = attachments.map((a) => a.dataUrl);
+      const getFileFromAttachment = (att: AttachmentItem): File => {
+        if (att.file) return att.file;
+        const arr = att.dataUrl.split(',');
+        const mimeMatch = arr[0].match(/:(.*?);/);
+        const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+        const bstr = atob(arr[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while (n--) {
+          u8arr[n] = bstr.charCodeAt(n);
+        }
+        return new File([u8arr], att.name, { type: mime });
+      };
 
       const newComplaint = await complaintService.createComplaint({
         title: title.trim(),
@@ -448,13 +462,42 @@ export const NewComplaintPage: React.FC = () => {
         location: location.trim(),
         description: description.trim(),
         additionalDetails: additionalDetails.trim() || undefined,
-        attachments: attachmentsList,
         status: 'pending',
         studentId: user?.id || 'user-student-1',
         studentName: user?.name || 'Alex Johnson',
         studentEmail: user?.email || 'student@college.edu',
         department: user?.department || 'Computer Science & Engineering',
       });
+
+      // Upload selected attachments via authenticated backend endpoint
+      if (attachments.length > 0) {
+        const uploadErrors: string[] = [];
+        const uploadedUrls: string[] = [];
+
+        for (const item of attachments) {
+          try {
+            const file = getFileFromAttachment(item);
+            const uploadRes = await complaintService.uploadAttachment(newComplaint.id, file);
+            if (uploadRes?.data?.signed_url || uploadRes?.data?.storage_path) {
+              uploadedUrls.push(uploadRes.data.signed_url || uploadRes.data.storage_path);
+            }
+          } catch (uploadErr: any) {
+            console.error(`Failed to upload attachment ${item.name}:`, uploadErr);
+            uploadErrors.push(uploadErr.message || item.name);
+          }
+        }
+
+        if (uploadedUrls.length > 0) {
+          newComplaint.attachments = uploadedUrls;
+        }
+
+        if (uploadErrors.length > 0) {
+          toastError(
+            `Complaint ${newComplaint.ticketNumber} was registered, but ${uploadErrors.length} attachment(s) failed to upload: ${uploadErrors.join(', ')}`,
+            'Attachment Upload Incomplete'
+          );
+        }
+      }
 
       setSubmittedComplaint(newComplaint);
       success(

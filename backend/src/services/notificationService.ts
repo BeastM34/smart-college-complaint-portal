@@ -5,6 +5,8 @@ import {
   NotificationFilterQuery,
   CreateNotificationInput,
   Complaint,
+  BroadcastNotification,
+  CreateBroadcastInput,
 } from '../types';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -428,5 +430,175 @@ export class NotificationService {
     } catch (err: any) {
       console.warn('[NotificationService] Error notifying of new comment:', err?.message);
     }
+  }
+
+  /**
+   * Dispatches a campus announcement broadcast and generates in-portal notifications for real student recipients.
+   * Resolves target recipients strictly from public.profiles in PostgreSQL.
+   */
+  public static async broadcastNotification(
+    adminUser: { id: string; role: string },
+    payload: CreateBroadcastInput
+  ): Promise<{ broadcast: BroadcastNotification; recipientCount: number }> {
+    if (adminUser.role !== 'admin') {
+      const err: any = new Error('Forbidden: Only administrators can dispatch broadcasts.');
+      err.statusCode = 403;
+      throw err;
+    }
+
+    const title = (payload.title || '').trim();
+    const message = (payload.message || '').trim();
+    if (!title) {
+      const err: any = new Error('Broadcast title is required.');
+      err.statusCode = 400;
+      throw err;
+    }
+    if (!message) {
+      const err: any = new Error('Broadcast message is required.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const rawAudience = String(payload.audience || 'all_students');
+    const audience = (rawAudience === 'all' ? 'all_students' : rawAudience) as 'all_students' | 'department' | 'student';
+    if (!['all_students', 'department', 'student'].includes(audience)) {
+      const err: any = new Error('Invalid audience type.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const priority = (payload.priority || 'info') as 'info' | 'warning' | 'error';
+    const targetDept = payload.targetDepartment || payload.target_department || null;
+    const targetStudentId = payload.targetStudentId || payload.target_student_id || null;
+
+    const admin = getSupabaseAdmin();
+
+    // 1. Resolve real active student recipients from public.profiles
+    let studentQuery = admin
+      .from('profiles')
+      .select('id, name, department, status, role')
+      .eq('role', 'student')
+      .eq('status', 'active');
+
+    if (audience === 'department') {
+      if (!targetDept || !targetDept.trim()) {
+        const err: any = new Error('Please specify a target department.');
+        err.statusCode = 400;
+        throw err;
+      }
+      studentQuery = studentQuery.ilike('department', `%${targetDept.trim()}%`);
+    } else if (audience === 'student') {
+      if (!targetStudentId || !UUID_REGEX.test(targetStudentId.trim())) {
+        const err: any = new Error('A valid target student ID (UUID) is required.');
+        err.statusCode = 400;
+        throw err;
+      }
+      studentQuery = studentQuery.eq('id', targetStudentId.trim());
+    }
+
+    const { data: realStudents, error: queryErr } = await studentQuery;
+    if (queryErr) {
+      const err: any = new Error(queryErr.message || 'Failed to query student recipients.');
+      err.statusCode = 500;
+      throw err;
+    }
+
+    const recipients = realStudents || [];
+
+    // If 0 recipients found, record failed broadcast record and reject with 400
+    if (recipients.length === 0) {
+      try {
+        await admin
+          .from('broadcast_notifications')
+          .insert({
+            title,
+            message,
+            audience,
+            target_department: targetDept ? targetDept.trim() : null,
+            target_student_id: targetStudentId ? targetStudentId.trim() : null,
+            priority,
+            sent_by: adminUser.id,
+            recipient_count: 0,
+            status: 'failed',
+          });
+      } catch {
+        // non-blocking
+      }
+
+      const err: any = new Error(
+        audience === 'department'
+          ? `No active students found in "${targetDept?.trim()}" department.`
+          : 'No active student accounts found to receive this broadcast.'
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+
+    // 2. Insert broadcast record into public.broadcast_notifications
+    const { data: broadcastRecord, error: bErr } = await admin
+      .from('broadcast_notifications')
+      .insert({
+        title,
+        message,
+        audience,
+        target_department: targetDept ? targetDept.trim() : null,
+        target_student_id: targetStudentId ? targetStudentId.trim() : null,
+        priority,
+        sent_by: adminUser.id,
+        recipient_count: recipients.length,
+        status: 'delivered',
+      })
+      .select('*')
+      .single();
+
+    if (bErr || !broadcastRecord) {
+      const err: any = new Error(bErr?.message || 'Failed to create broadcast notification.');
+      err.statusCode = 500;
+      throw err;
+    }
+
+    // 3. Batch create in-portal notification rows for all resolved students in public.notifications
+    const notificationsToInsert = recipients.map((r) => ({
+      user_id: r.id,
+      broadcast_id: broadcastRecord.id,
+      title: audience === 'department' && targetDept ? `[${targetDept.trim()}] ${title}` : title,
+      message,
+      type: priority,
+      category: 'broadcast',
+      read: false,
+    }));
+
+    const { error: notifErr } = await admin
+      .from('notifications')
+      .insert(notificationsToInsert);
+
+    if (notifErr) {
+      console.warn('[NotificationService] Warning: Failed to batch insert student notifications:', notifErr.message);
+    }
+
+    return {
+      broadcast: broadcastRecord as BroadcastNotification,
+      recipientCount: recipients.length,
+    };
+  }
+
+  /**
+   * Lists administrative broadcast history from public.broadcast_notifications.
+   */
+  public static async listBroadcasts(
+    userClient: SupabaseClient
+  ): Promise<BroadcastNotification[]> {
+    const { data, error } = await userClient
+      .from('broadcast_notifications')
+      .select('*')
+      .order('sent_at', { ascending: false });
+
+    if (error) {
+      const err: any = new Error(error.message || 'Failed to retrieve broadcast notifications.');
+      err.statusCode = 500;
+      throw err;
+    }
+
+    return (data || []) as BroadcastNotification[];
   }
 }

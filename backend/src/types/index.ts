@@ -229,6 +229,31 @@ export interface CreateNotificationInput {
   link?: string;
 }
 
+export interface BroadcastNotification {
+  id: string;
+  title: string;
+  message: string;
+  audience: 'all_students' | 'department' | 'student';
+  target_department?: string | null;
+  target_student_id?: string | null;
+  priority: 'info' | 'warning' | 'error';
+  sent_by: string;
+  recipient_count: number;
+  status: 'delivered' | 'failed';
+  sent_at: string;
+}
+
+export interface CreateBroadcastInput {
+  title: string;
+  message: string;
+  audience?: 'all_students' | 'department' | 'student';
+  targetDepartment?: string;
+  target_department?: string;
+  targetStudentId?: string;
+  target_student_id?: string;
+  priority?: 'info' | 'warning' | 'error';
+}
+
 // =============================================================================
 // Phase 4D: Categories, Settings, Analytics & Users Types
 // =============================================================================

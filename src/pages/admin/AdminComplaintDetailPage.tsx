@@ -61,8 +61,8 @@ export const AdminComplaintDetailPage: React.FC = () => {
 
   // Assign Modal State
   const [assignModalOpen, setAssignModalOpen] = useState(false);
-  const [staffMembers, setStaffMembers] = useState<any[]>(MOCK_STAFF);
-  const [selectedStaffId, setSelectedStaffId] = useState(MOCK_STAFF[0].id);
+  const [staffMembers, setStaffMembers] = useState<any[]>([]);
+  const [selectedStaffId, setSelectedStaffId] = useState('');
   const [selectedDepartment, setSelectedDepartment] = useState<string>(MOCK_DEPARTMENTS[0]);
   const [assignNotifyStudent, setAssignNotifyStudent] = useState(true);
   const [isAssigning, setIsAssigning] = useState(false);
@@ -86,14 +86,19 @@ export const AdminComplaintDetailPage: React.FC = () => {
       if (realStaff && realStaff.length > 0) {
         setStaffMembers(realStaff);
         setSelectedStaffId((prev) => {
-          if (!prev || prev === MOCK_STAFF[0].id) {
+          if (!prev || !realStaff.some((s) => s.id === prev)) {
             return realStaff[0].id;
           }
           return prev;
         });
+      } else {
+        setStaffMembers([]);
+        setSelectedStaffId('');
       }
     } catch (err) {
-      // Fall back to MOCK_STAFF
+      console.error('Failed to load staff accounts:', err);
+      setStaffMembers([]);
+      setSelectedStaffId('');
     }
   };
 
@@ -158,7 +163,17 @@ export const AdminComplaintDetailPage: React.FC = () => {
     e.preventDefault();
     if (!complaint) return;
 
-    const staffMember = staffMembers.find((s) => s.id === selectedStaffId) || staffMembers[0];
+    if (!selectedStaffId || staffMembers.length === 0) {
+      toastError('No staff members registered in system.', 'Assignment Error');
+      return;
+    }
+
+    const staffMember = staffMembers.find((s) => s.id === selectedStaffId);
+    if (!staffMember) {
+      toastError('Please select a valid staff member.', 'Assignment Error');
+      return;
+    }
+
     setIsAssigning(true);
     try {
       const updated = await complaintService.assignComplaint(
@@ -198,8 +213,9 @@ export const AdminComplaintDetailPage: React.FC = () => {
       setComplaint(updated);
       setPriorityModalOpen(false);
       success(`Priority adjusted to ${selectedPriority.toUpperCase()}`, 'Priority Updated');
-    } catch (err) {
-      toastError('Failed to update priority', 'Error');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to update priority';
+      toastError(msg, 'Error');
       console.error(err);
     } finally {
       setIsUpdatingPriority(false);
@@ -869,19 +885,31 @@ export const AdminComplaintDetailPage: React.FC = () => {
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-              Assign Staff Member
-            </label>
-            <Select
-              value={selectedStaffId}
-              onChange={(e) => setSelectedStaffId(e.target.value)}
-              options={staffMembers.map((staff) => ({
-                value: staff.id,
-                label: `${staff.name} — ${staff.designation || 'Staff'} (${staff.department || 'General'})`,
-              }))}
-            />
-          </div>
+          {staffMembers.length === 0 ? (
+            <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-800 dark:text-amber-200 flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">No staff members registered in system.</p>
+                <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
+                  Technician assignments require an active staff profile in the database.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                Assign Staff Member
+              </label>
+              <Select
+                value={selectedStaffId}
+                onChange={(e) => setSelectedStaffId(e.target.value)}
+                options={staffMembers.map((staff) => ({
+                  value: staff.id,
+                  label: `${staff.name} — ${staff.designation || 'Staff'} (${staff.department || 'General'})`,
+                }))}
+              />
+            </div>
+          )}
 
           {complaint.status === 'pending' && (
             <div className="p-3 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-900/40 text-xs text-purple-900 dark:text-purple-200">
@@ -924,8 +952,9 @@ export const AdminComplaintDetailPage: React.FC = () => {
               type="submit"
               variant="primary"
               size="sm"
+              disabled={staffMembers.length === 0 || !selectedStaffId}
               isLoading={isAssigning}
-              className="bg-purple-700 hover:bg-purple-800 text-white"
+              className="bg-purple-700 hover:bg-purple-800 text-white disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Confirm Assignment
             </Button>

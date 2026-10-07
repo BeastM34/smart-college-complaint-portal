@@ -476,6 +476,84 @@ export class ComplaintController {
   }
 
   /**
+   * PATCH /api/complaints/:id/priority
+   * Updates complaint priority (Admin only).
+   */
+  public static async updatePriority(req: Request, res: Response): Promise<void> {
+    if (!req.user || !req.user.id) {
+      res.status(401).json({
+        success: false,
+        message: 'Authentication required. Missing user identity.',
+      });
+      return;
+    }
+
+    if (!req.supabase) {
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error: User database session is not available.',
+      });
+      return;
+    }
+
+    if (req.profile?.role !== 'admin') {
+      res.status(403).json({
+        success: false,
+        message: 'Forbidden: Only administrators can update complaint priority.',
+      });
+      return;
+    }
+
+    const { id } = req.params;
+    if (!id || !UUID_REGEX.test(id)) {
+      res.status(404).json({
+        success: false,
+        message: 'Complaint not found.',
+      });
+      return;
+    }
+
+    const { priority } = req.body || {};
+    if (!priority || typeof priority !== 'string') {
+      res.status(400).json({
+        success: false,
+        message: 'Priority is required and must be a valid string.',
+      });
+      return;
+    }
+
+    const cleanPriority = priority.trim().toLowerCase() as any;
+    if (!['low', 'medium', 'high', 'critical'].includes(cleanPriority)) {
+      res.status(400).json({
+        success: false,
+        message: 'Priority must be one of: low, medium, high, critical.',
+      });
+      return;
+    }
+
+    try {
+      const updated = await ComplaintService.updatePriority(
+        req.supabase,
+        id,
+        cleanPriority,
+        { id: req.user.id, role: req.profile.role }
+      );
+
+      res.status(200).json({
+        success: true,
+        message: 'Complaint priority updated successfully.',
+        data: updated,
+      });
+    } catch (err: any) {
+      const statusCode = err.statusCode || (err.code === '42501' ? 403 : 500);
+      res.status(statusCode).json({
+        success: false,
+        message: err.message || 'Failed to update complaint priority.',
+      });
+    }
+  }
+
+  /**
    * PATCH /api/complaints/:id/status
    * Updates complaint workflow status according to state machine transitions (Staff or Admin).
    */

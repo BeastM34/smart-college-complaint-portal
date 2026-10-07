@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { NotificationController } from '../controllers/notificationController';
-import { requireAuth } from '../middleware/authMiddleware';
+import { requireAuth, requireAdmin } from '../middleware/authMiddleware';
 
 const router = Router();
 
@@ -22,6 +22,22 @@ router.get(
   '/unread-count',
   requireAuth,
   NotificationController.getUnreadCount
+);
+
+// Dispatch administrative broadcast notification (Admin only)
+router.post(
+  '/broadcast',
+  requireAuth,
+  requireAdmin,
+  NotificationController.createBroadcast
+);
+
+// List administrative broadcast history (Admin only)
+router.get(
+  '/broadcasts',
+  requireAuth,
+  requireAdmin,
+  NotificationController.listBroadcasts
 );
 
 // Mark all unread notifications as read for authenticated user

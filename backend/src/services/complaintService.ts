@@ -481,6 +481,60 @@ export class ComplaintService {
   }
 
   /**
+   * Updates complaint priority (Admin only).
+   * Validates admin role, updates priority, records timeline event, and returns enriched complaint.
+   */
+  public static async updatePriority(
+    userClient: SupabaseClient,
+    complaintId: string,
+    priority: ComplaintPriority,
+    adminUser: { id: string; role: string }
+  ): Promise<Complaint> {
+    if (adminUser.role !== 'admin') {
+      const err: any = new Error('Forbidden: Only administrators can update complaint priority.');
+      err.statusCode = 403;
+      throw err;
+    }
+
+    const complaint = await this.getComplaintById(userClient, complaintId);
+    if (!complaint) {
+      const err: any = new Error('Complaint not found.');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const { data: updatedComplaint, error: updateErr } = await userClient
+      .from('complaints')
+      .update({ priority })
+      .eq('id', complaintId)
+      .select(COMPLAINT_SELECT_WITH_PROFILES)
+      .single();
+
+    if (updateErr || !updatedComplaint) {
+      const err: any = new Error(updateErr?.message || 'Failed to update complaint priority.');
+      err.statusCode = updateErr?.code === '42501' ? 403 : 500;
+      throw err;
+    }
+
+    const enriched = enrichComplaintWithProfiles(updatedComplaint);
+
+    try {
+      await userClient.from('complaint_timeline').insert({
+        complaint_id: complaintId,
+        status: complaint.status,
+        action: 'priority_changed',
+        message: `Priority changed from ${complaint.priority} to ${priority} by Administrator.`,
+        updated_by: adminUser.id,
+        is_internal: false,
+      });
+    } catch (timelineErr: any) {
+      console.warn('[ComplaintService] Warning: Failed to record timeline event for priority update:', timelineErr?.message);
+    }
+
+    return enriched;
+  }
+
+  /**
    * Updates complaint status following the strict state machine (Staff or Admin).
    * Enforces role authority, transitions, server-side resolved_at timestamps, and timeline tracking.
    */

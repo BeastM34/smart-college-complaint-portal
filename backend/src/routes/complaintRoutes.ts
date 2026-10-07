@@ -66,6 +66,13 @@ router.patch(
   ComplaintController.assignComplaint
 );
 
+// Update complaint priority (Admin only)
+router.patch(
+  '/:id/priority',
+  requireAuth,
+  ComplaintController.updatePriority
+);
+
 // Update complaint workflow status (Staff / Admin)
 router.patch(
   '/:id/status',

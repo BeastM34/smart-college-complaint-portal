@@ -58,7 +58,7 @@ export class AttachmentController {
 
     // 1. Resolve Complaint & User Identity
     let resolvedComplaintId = complaintId;
-    let resolvedUserId: string | null = (req.body?.uploaded_by || req.headers['x-user-id']) as string || null;
+    let resolvedUserId: string | null = ((req as any).user?.id || req.body?.uploaded_by || req.headers['x-user-id']) as string || null;
 
     if (UUID_REGEX.test(complaintId)) {
       const { data: complaint, error: cErr } = await supabase

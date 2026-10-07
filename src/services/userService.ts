@@ -134,7 +134,11 @@ class UserService {
       if (err?.status === 401 || err?.status === 403) {
         if (!authService.isAuthenticated()) throw err;
       }
-      // Offline fallback
+      // Offline fallback for unit tests running without backend
+    }
+
+    if (authService.getAccessToken()) {
+      return [];
     }
 
     this.ensureInitialized();

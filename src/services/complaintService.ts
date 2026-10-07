@@ -491,15 +491,21 @@ class ComplaintService {
       if (res && res.success && res.data) {
         const mapped = mapBackendComplaint(res.data);
         try {
-          const [commentsRes, timelineRes] = await Promise.allSettled([
+          const [commentsRes, timelineRes, attachmentsRes] = await Promise.allSettled([
             apiClient.get<any[]>(`/complaints/${encodeURIComponent(mapped.id)}/comments`),
             apiClient.get<any[]>(`/complaints/${encodeURIComponent(mapped.id)}/timeline`),
+            apiClient.get<any[]>(`/complaints/${encodeURIComponent(mapped.id)}/attachments`),
           ]);
           if (commentsRes.status === 'fulfilled' && commentsRes.value?.success && Array.isArray(commentsRes.value.data)) {
             mapped.comments = commentsRes.value.data.map(mapBackendComment);
           }
           if (timelineRes.status === 'fulfilled' && timelineRes.value?.success && Array.isArray(timelineRes.value.data)) {
             mapped.timeline = timelineRes.value.data.map(mapBackendTimelineEvent);
+          }
+          if (attachmentsRes.status === 'fulfilled' && attachmentsRes.value?.success && Array.isArray(attachmentsRes.value.data)) {
+            mapped.attachments = attachmentsRes.value.data
+              .map((att: any) => att.signed_url || att.storage_path)
+              .filter(Boolean);
           }
         } catch {
           // non-blocking secondary hydration
@@ -779,6 +785,16 @@ class ComplaintService {
     events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     return events.slice(0, limit);
+  }
+
+  /**
+   * Uploads an individual complaint evidence attachment file via multipart/form-data.
+   * Calls POST /api/complaints/:complaintId/attachments.
+   */
+  public async uploadAttachment(complaintId: string, file: File): Promise<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiClient.post(`/complaints/${encodeURIComponent(complaintId)}/attachments`, formData);
   }
 
   public async createComplaint(
@@ -1249,6 +1265,28 @@ class ComplaintService {
     priority: Priority,
     notifyStudent: boolean = false
   ): Promise<Complaint> {
+    // 1. Attempt real backend API first if authenticated session exists
+    try {
+      let complaintUuid = id;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+        const resolved = await this.getComplaintById(id);
+        if (resolved?.id) {
+          complaintUuid = resolved.id;
+        }
+      }
+
+      const res = await apiClient.patch<any>(`/complaints/${encodeURIComponent(complaintUuid)}/priority`, { priority });
+      if (res && res.success && res.data) {
+        const fresh = await this.getComplaintById(complaintUuid);
+        return fresh || mapBackendComplaint(res.data);
+      }
+    } catch (err: any) {
+      if (err?.status === 400 || err?.status === 401 || err?.status === 403 || err?.status === 404) {
+        throw new Error(err.message || 'Failed to update priority.');
+      }
+      // Offline fallback for unit tests
+    }
+
     this.ensureInitialized();
     const currentUser = authService.getCurrentUser();
     if (!currentUser || currentUser.role !== 'admin') {
