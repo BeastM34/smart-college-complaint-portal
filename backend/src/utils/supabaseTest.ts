@@ -61,7 +61,6 @@ export const testSupabaseConnection = async (): Promise<SupabaseConnectionStatus
       message: 'Successfully connected to Supabase PostgreSQL database.',
     };
   } catch (err: any) {
-    console.error('[SupabaseHealthCheck Error]:', err);
     return {
       configured: true,
       connected: false,

@@ -3,7 +3,7 @@ import { env } from '../config/env';
 import { HealthCheckResponse } from '../types';
 import { testSupabaseConnection } from '../utils/supabaseTest';
 
-export const getHealth = async (_req: Request, res: Response): Promise<void> => {
+export const getHealth = async (_req: Request, res: Response<HealthCheckResponse>): Promise<void> => {
   const dbStatus = await testSupabaseConnection();
 
   res.status(200).json({
@@ -17,7 +17,6 @@ export const getHealth = async (_req: Request, res: Response): Promise<void> => 
       connected: dbStatus.connected,
       status: !dbStatus.configured ? 'not_configured' : dbStatus.connected ? 'connected' : 'error',
       message: dbStatus.message,
-      error: dbStatus.error,
     },
   });
 };
